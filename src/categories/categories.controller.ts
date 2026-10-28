@@ -9,13 +9,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { UserRole } from '../generated/prisma/client.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CategoriesService } from './categories.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
-import { Roles } from './decorators/roles.decorator.js';
-import { RolesGuard } from './guards/roles.guard.js';
+import { PermissionsGuard } from '../rbac/permissions.guard.js';
+import { RequirePermissions } from '../rbac/permissions.decorator.js';
 
 @Controller('categories')
 export class CategoriesController {
@@ -35,16 +34,16 @@ export class CategoriesController {
 
   // POST /api/categories
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('category:create')
   create(@Body() dto: CreateCategoryDto) {
     return this.categoriesService.create(dto);
   }
 
   // PATCH /api/categories/:id
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('category:update')
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCategoryDto,
@@ -54,8 +53,8 @@ export class CategoriesController {
 
   // DELETE /api/categories/:id
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('category:delete')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.categoriesService.remove(id);
   }

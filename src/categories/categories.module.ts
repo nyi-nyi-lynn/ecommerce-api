@@ -3,12 +3,12 @@ import { CategoriesController } from './categories.controller.js';
 import { CategoriesService } from './categories.service.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
-import { RolesGuard } from './guards/roles.guard.js';
+import { RbacModule } from '../rbac/rbac.module.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 
 @Module({
-  imports : [PrismaModule,AuthModule],
+  imports : [PrismaModule,AuthModule,RbacModule],
   controllers: [CategoriesController],
-  providers: [CategoriesService,RolesGuard,JwtAuthGuard]
+  providers: [CategoriesService,JwtAuthGuard]
 })
 export class CategoriesModule {}

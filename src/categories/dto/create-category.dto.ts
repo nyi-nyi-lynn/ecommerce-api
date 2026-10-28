@@ -4,7 +4,6 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-  maxLength,
 } from 'class-validator';
 
 export class CreateCategoryDto {

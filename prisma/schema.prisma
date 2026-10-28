@@ -12,11 +12,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserRole {
-  CUSTOMER
-  ADMIN
-}
-
 enum OrderStatus {
   PENDING
   CONFIRMED
@@ -49,7 +44,7 @@ model User {
   email        String   @unique @db.VarChar(255)
   phone        String?  @unique @db.VarChar(30)
   passwordHash String
-  role         UserRole @default(CUSTOMER)
+  roleId       Int
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -57,6 +52,34 @@ model User {
   cart           Cart?
   orders         Order[]
   stockMovements StockMovement[]
+  role           Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+}
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique @db.VarChar(100)
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  code        String           @unique @db.VarChar(120)
+  description String?
+  roleLinks   RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
 }
 
 model Category {

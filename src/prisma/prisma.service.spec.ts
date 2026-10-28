@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from './prisma.service.js';
+import 'dotenv/config';
 
 describe('PrismaService', () => {
   let service: PrismaService;
