@@ -52,7 +52,27 @@ model User {
   cart           Cart?
   orders         Order[]
   stockMovements StockMovement[]
+  refreshTokens  RefreshToken[]
   role           Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+}
+
+model RefreshToken {
+  id                 String        @id @db.Uuid
+  userId             Int
+  familyId           String        @db.Uuid
+  tokenHash          String        @unique @db.Char(64)
+  expiresAt           DateTime      @db.Timestamp(3)
+  createdAt           DateTime      @default(now()) @db.Timestamp(3)
+  revokedAt           DateTime?     @db.Timestamp(3)
+  replacedByTokenId   String?       @db.Uuid
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy          RefreshToken? @relation("RefreshTokenRotation", fields: [replacedByTokenId], references: [id], onDelete: SetNull)
+  replaces            RefreshToken[] @relation("RefreshTokenRotation")
+
+  @@index([userId])
+  @@index([userId, familyId])
+  @@index([familyId, revokedAt])
+  @@index([expiresAt])
 }
 
 model Role {

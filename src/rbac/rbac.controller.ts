@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Put,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from './permissions.guard.js';
@@ -17,19 +28,32 @@ type AuthenticatedRequest = Request & { user: { sub: number } };
 export class RbacController {
   constructor(private readonly rbacService: RbacService) {}
 
-  @Get('roles') listRoles() { return this.rbacService.listRoles(); }
-  @Get('permissions') listPermissions() { return this.rbacService.listPermissions(); }
-  @Post('roles') createRole(@Body() dto: CreateRoleDto) { return this.rbacService.createRole(dto); }
-  @Patch('roles/:id') updateRole(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateRoleDto) {
+  @Get('roles') listRoles() {
+    return this.rbacService.listRoles();
+  }
+  @Get('permissions') listPermissions() {
+    return this.rbacService.listPermissions();
+  }
+  @Post('roles') createRole(@Body() dto: CreateRoleDto) {
+    return this.rbacService.createRole(dto);
+  }
+  @Patch('roles/:id') updateRole(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateRoleDto,
+  ) {
     return this.rbacService.updateRole(id, dto);
   }
   @Put('roles/:id/permissions') setPermissions(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SetRolePermissionsDto,
-  ) { return this.rbacService.setPermissions(id, dto.permissionIds); }
+  ) {
+    return this.rbacService.setPermissions(id, dto.permissionIds);
+  }
   @Patch('users/:id/role') assignUserRole(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AssignUserRoleDto,
     @Req() request: AuthenticatedRequest,
-  ) { return this.rbacService.assignUserRole(id, dto.roleId, request.user.sub); }
+  ) {
+    return this.rbacService.assignUserRole(id, dto.roleId, request.user.sub);
+  }
 }
