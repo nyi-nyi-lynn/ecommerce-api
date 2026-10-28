@@ -11,6 +11,9 @@ import { CategoriesController } from '../categories/categories.controller.js';
 import { CategoriesService } from '../categories/categories.service.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { GlobalExceptionFilter } from '../common/http/global-exception.filter.js';
+import { ResponseInterceptor } from '../common/http/response.interceptor.js';
 
 vi.mock('bcrypt', () => ({
   hash: vi.fn().mockResolvedValue('hashed-password'),
@@ -106,8 +109,16 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
           }
           return found;
         }),
-        create: vi.fn(),
+        create: vi.fn(async ({ data }) => ({
+          id: 30,
+          name: data.name,
+          email: data.email,
+          phone: data.phone ?? null,
+          role: { name: 'CUSTOMER' },
+          createdAt: new Date(),
+        })),
       },
+      role: { findUnique: vi.fn().mockResolvedValue({ id: 2, name: 'CUSTOMER' }) },
       refreshToken,
       category,
       $transaction: vi.fn(async (callback) => {
@@ -132,6 +143,8 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
         Reflector,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { getOrThrow: (key: string) => key === 'JWT_REFRESH_TOKEN_TTL_SECONDS' ? 604800 : 'isolated-test-secret' } },
+        { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+        { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
       ],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -146,33 +159,46 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
     return request(app.getHttpServer()).post('/api/auth/login').send({ email, password: 'password123' });
   }
 
+  it('keeps registration fields available under the response envelope', async () => {
+    const registration = await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({ name: 'New Customer', email: 'new-customer@example.test', password: 'password123' })
+      .expect(201);
+    expect(registration.body.data).toMatchObject({
+      user: { name: 'New Customer', role: 'CUSTOMER' },
+      accessToken: expect.any(String),
+      refreshToken: expect.any(String),
+    });
+  });
+
   it('logs in, rotates over HTTP, rejects the old token, and logs out with 204', async () => {
     const loggedIn = await login();
     expect(loggedIn.status).toBe(201);
-    expect(loggedIn.body).toMatchObject({ user: { email: customer.email }, accessToken: expect.any(String), refreshToken: expect.any(String) });
+    expect(loggedIn.body.data).toMatchObject({ user: { email: customer.email }, accessToken: expect.any(String), refreshToken: expect.any(String) });
 
-    const refreshed = await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: loggedIn.body.refreshToken });
+    const refreshed = await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: loggedIn.body.data.refreshToken });
     expect(refreshed.status, JSON.stringify(refreshed.body)).toBe(201);
-    expect(refreshed.body.refreshToken).not.toBe(loggedIn.body.refreshToken);
-    expect(refreshed.body.accessToken).toEqual(expect.any(String));
+    expect(refreshed.body.data.refreshToken).not.toBe(loggedIn.body.data.refreshToken);
+    expect(refreshed.body.data.accessToken).toEqual(expect.any(String));
 
-    await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: loggedIn.body.refreshToken }).expect(401);
-    await request(app.getHttpServer()).post('/api/auth/logout').send({ refreshToken: refreshed.body.refreshToken }).expect(204);
-    await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: refreshed.body.refreshToken }).expect(401);
+    await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: loggedIn.body.data.refreshToken }).expect(401);
+    const logout = await request(app.getHttpServer()).post('/api/auth/logout').send({ refreshToken: refreshed.body.data.refreshToken }).expect(204);
+    expect(logout.text).toBe('');
+    await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: refreshed.body.data.refreshToken }).expect(401);
   });
 
   it('logs out one session family without revoking another device', async () => {
     const first = await login();
     const second = await login();
-    await request(app.getHttpServer()).post('/api/auth/logout').send({ refreshToken: first.body.refreshToken }).expect(204);
-    await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: second.body.refreshToken }).expect(201);
+    await request(app.getHttpServer()).post('/api/auth/logout').send({ refreshToken: first.body.data.refreshToken }).expect(204);
+    await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: second.body.data.refreshToken }).expect(201);
   });
 
   it('rejects malformed refresh tokens and preserves bearer /me authentication', async () => {
     await request(app.getHttpServer()).post('/api/auth/refresh').send({ refreshToken: 'malformed' }).expect(401);
     const loggedIn = await login();
-    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${loggedIn.body.accessToken}`).expect(200).expect(({ body }) => {
-      expect(body.email).toBe(customer.email);
+    await request(app.getHttpServer()).get('/api/auth/me').set('Authorization', `Bearer ${loggedIn.body.data.accessToken}`).expect(200).expect(({ body }) => {
+      expect(body.data.email).toBe(customer.email);
     });
   });
 
@@ -181,10 +207,10 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
     await request(app.getHttpServer()).post('/api/categories').send({ name: 'HTTP Category', slug: 'http-category' }).expect(401);
 
     const customerLogin = await login();
-    await request(app.getHttpServer()).post('/api/categories').set('Authorization', `Bearer ${customerLogin.body.accessToken}`).send({ name: 'HTTP Category', slug: 'http-category' }).expect(403);
+    await request(app.getHttpServer()).post('/api/categories').set('Authorization', `Bearer ${customerLogin.body.data.accessToken}`).send({ name: 'HTTP Category', slug: 'http-category' }).expect(403);
 
     const adminLogin = await login(admin.email);
-    await request(app.getHttpServer()).post('/api/categories').set('Authorization', `Bearer ${adminLogin.body.accessToken}`).send({ name: 'HTTP Category', slug: 'http-category' }).expect(201);
+    await request(app.getHttpServer()).post('/api/categories').set('Authorization', `Bearer ${adminLogin.body.data.accessToken}`).send({ name: 'HTTP Category', slug: 'http-category' }).expect(201);
     expect(prisma.category.create).toHaveBeenCalledTimes(1);
   });
 });
