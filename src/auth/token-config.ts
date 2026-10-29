@@ -3,7 +3,7 @@ const MAX_ACCESS_TTL_SECONDS = 24 * 60 * 60;
 const MAX_REFRESH_TTL_SECONDS = 365 * 24 * 60 * 60;
 
 export function validateEnvironment(env: Record<string, unknown>) {
-  const accessTtl = env.JWT_ACCESS_TOKEN_TTL ?? '15m';
+  const accessTtl = env.JWT_ACCESS_TOKEN_TTL ?? '1d';
   if (typeof accessTtl !== 'string' || !ACCESS_TTL_PATTERN.test(accessTtl)) {
     throw new Error('JWT_ACCESS_TOKEN_TTL must be a positive duration such as 15m, up to 24 hours');
   }

@@ -9,6 +9,7 @@ import { CategoriesModule } from './categories/categories.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { StockModule } from './stock/stock.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
+import { OrdersModule } from './orders/orders.module.js';
 import { validateEnvironment } from './auth/token-config.js';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { GlobalExceptionFilter } from './common/http/global-exception.filter.js';
@@ -31,6 +32,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ProductsModule,
     StockModule,
     RbacModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [

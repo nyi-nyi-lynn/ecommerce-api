@@ -10,5 +10,6 @@ import { StockService } from './stock.service.js';
   imports: [PrismaModule, AuthModule, RbacModule],
   controllers: [StockController],
   providers: [StockService, JwtAuthGuard],
+  exports: [StockService],
 })
 export class StockModule {}

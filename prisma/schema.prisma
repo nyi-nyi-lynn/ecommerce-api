@@ -153,6 +153,7 @@ model Stock {
 model StockMovement {
   id        Int               @id @default(autoincrement())
   productId Int
+  orderId   Int?
   userId    Int?
   type      StockMovementType
   quantity  Int
@@ -162,9 +163,11 @@ model StockMovement {
   createdAt DateTime          @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
   user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([productId, createdAt])
+  @@index([orderId])
   @@index([userId])
 }
 
@@ -210,6 +213,7 @@ model Order {
 
   user  User        @relation(fields: [userId], references: [id], onDelete: Restrict)
   items OrderItem[]
+  stockMovements StockMovement[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -227,5 +231,6 @@ model OrderItem {
   order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
 
+  @@index([orderId])
   @@index([productId])
 }

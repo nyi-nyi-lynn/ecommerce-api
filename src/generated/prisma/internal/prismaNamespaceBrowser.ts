@@ -183,6 +183,7 @@ export type StockScalarFieldEnum = (typeof StockScalarFieldEnum)[keyof typeof St
 export const StockMovementScalarFieldEnum = {
   id: 'id',
   productId: 'productId',
+  orderId: 'orderId',
   userId: 'userId',
   type: 'type',
   quantity: 'quantity',

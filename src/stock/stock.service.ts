@@ -56,46 +56,122 @@ export class StockService {
       if (!product) throw new NotFoundException('Product not found.');
       if (!product.stock) throw new NotFoundException('Stock has not been initialized for this product.');
 
-      // Only positive changes consume headroom below INT4_MAX. Keep this bound in
-      // PostgreSQL's integer range even when the requested change is negative.
-      const maxQuantityBeforeIncrease =
-        2_147_483_647 - Math.max(dto.quantityChange, 0);
-
-      // This single conditional UPDATE takes a row lock and checks the resulting range atomically.
-      // Competing adjustments serialize at PostgreSQL; a failed predicate cannot oversell or overflow INT.
-      const changed = await tx.$queryRaw<Array<{ quantity: number; quantityBefore: number }>>`
-        UPDATE "stocks"
-        SET "quantity" = "quantity" + ${dto.quantityChange},
-            "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "productId" = ${productId}
-          AND "quantity" >= "reservedQuantity"
-          AND (
-            (${dto.quantityChange} > 0 AND "quantity" <= ${maxQuantityBeforeIncrease})
-            OR (
-              ${dto.quantityChange} < 0
-              AND "quantity" - "reservedQuantity" >= ${-dto.quantityChange}
-            )
-          )
-        RETURNING "quantity", ("quantity" - ${dto.quantityChange}) AS "quantityBefore"
-      `;
-      const result = changed[0];
+      const result = await this.changeQuantity(tx, productId, dto.quantityChange);
       if (!result) {
         throw new ConflictException('Stock adjustment would make the quantity invalid.');
       }
 
-      const movement = await tx.stockMovement.create({
-        data: {
-          productId,
-          userId: actorId,
-          type: dto.reason,
-          quantity: dto.quantityChange,
-          quantityBefore: result.quantityBefore,
-          quantityAfter: result.quantity,
-          note: dto.note?.trim() || null,
-        },
+      const movement = await this.createMovement(tx, {
+        productId,
+        userId: actorId,
+        type: dto.reason,
+        quantity: dto.quantityChange,
+        quantityBefore: result.quantityBefore,
+        quantityAfter: result.quantity,
+        note: dto.note?.trim() || null,
       });
       return { stock: { productId, quantity: result.quantity }, movement };
     });
+  }
+
+  /** Consume on-hand stock for an order inside the caller's transaction. */
+  async consumeForOrder(
+    tx: Prisma.TransactionClient,
+    productId: number,
+    quantity: number,
+    actorId: number,
+    orderId: number,
+  ) {
+    const change = -quantity;
+    const result = await this.changeQuantity(tx, productId, change);
+    if (!result) {
+      throw new ConflictException(
+        'Insufficient available stock or stock has not been initialized.',
+      );
+    }
+    return this.createMovement(tx, {
+      productId,
+      orderId,
+      userId: actorId,
+      type: StockMovementType.SALE,
+      quantity: change,
+      quantityBefore: result.quantityBefore,
+      quantityAfter: result.quantity,
+      note: `Order ${orderId}`,
+    });
+  }
+
+  /** Restore a cancelled order inside the caller's transaction. */
+  async restoreForOrder(
+    tx: Prisma.TransactionClient,
+    productId: number,
+    quantity: number,
+    actorId: number,
+    orderId: number,
+  ) {
+    const result = await this.changeQuantity(tx, productId, quantity);
+    if (!result) {
+      throw new ConflictException(
+        'Stock restoration would exceed the supported quantity range.',
+      );
+    }
+    return this.createMovement(tx, {
+      productId,
+      orderId,
+      userId: actorId,
+      type: StockMovementType.CANCELLATION,
+      quantity,
+      quantityBefore: result.quantityBefore,
+      quantityAfter: result.quantity,
+      note: `Cancellation of order ${orderId}`,
+    });
+  }
+
+  private async changeQuantity(
+    tx: Prisma.TransactionClient,
+    productId: number,
+    quantityChange: number,
+  ) {
+    // Only positive changes consume headroom below INT4_MAX. Keep the bound in
+    // PostgreSQL's integer range for both order movements and manual adjustments.
+    const maxQuantityBeforeIncrease =
+      2_147_483_647 - Math.max(quantityChange, 0);
+
+    // PostgreSQL performs the conditional update atomically under a row lock.
+    const changed = await tx.$queryRaw<
+      Array<{ quantity: number; quantityBefore: number }>
+    >`
+      UPDATE "stocks"
+      SET "quantity" = "quantity" + ${quantityChange},
+          "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "productId" = ${productId}
+        AND "quantity" >= "reservedQuantity"
+        AND (
+          (${quantityChange} > 0 AND "quantity" <= ${maxQuantityBeforeIncrease})
+          OR (
+            ${quantityChange} < 0
+            AND "quantity" - "reservedQuantity" >= ${-quantityChange}
+          )
+        )
+      RETURNING "quantity", ("quantity" - ${quantityChange}) AS "quantityBefore"
+    `;
+    return changed[0] ?? null;
+  }
+
+  private createMovement(
+    tx: Prisma.TransactionClient,
+    data: {
+      productId: number;
+      orderId?: number;
+      userId: number;
+      type: StockMovementType;
+      quantity: number;
+      quantityBefore: number;
+      quantityAfter: number;
+      note: string | null;
+    },
+  ) {
+    return tx.stockMovement.create({ data });
   }
 
   async getStock(productId: number) {
