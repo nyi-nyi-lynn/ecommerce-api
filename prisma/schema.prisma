@@ -31,6 +31,7 @@ enum PaymentStatus {
 }
 
 enum StockMovementType {
+  INITIALIZATION
   RESTOCK
   SALE
   RETURN
@@ -141,6 +142,7 @@ model Stock {
   productId        Int      @id
   quantity         Int      @default(0)
   reservedQuantity Int      @default(0)
+  createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -154,6 +156,8 @@ model StockMovement {
   userId    Int?
   type      StockMovementType
   quantity  Int
+  quantityBefore Int?
+  quantityAfter  Int?
   note      String?
   createdAt DateTime          @default(now())
 

@@ -173,6 +173,7 @@ export const StockScalarFieldEnum = {
   productId: 'productId',
   quantity: 'quantity',
   reservedQuantity: 'reservedQuantity',
+  createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
 
@@ -185,6 +186,8 @@ export const StockMovementScalarFieldEnum = {
   userId: 'userId',
   type: 'type',
   quantity: 'quantity',
+  quantityBefore: 'quantityBefore',
+  quantityAfter: 'quantityAfter',
   note: 'note',
   createdAt: 'createdAt'
 } as const

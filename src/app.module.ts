@@ -7,6 +7,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { ProductsModule } from './products/products.module.js';
+import { StockModule } from './stock/stock.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { validateEnvironment } from './auth/token-config.js';
 import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
@@ -28,6 +29,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     AuthModule,
     CategoriesModule,
     ProductsModule,
+    StockModule,
     RbacModule,
   ],
   controllers: [AppController],

@@ -37,6 +37,7 @@ export type PaymentStatus = (typeof PaymentStatus)[keyof typeof PaymentStatus]
 
 
 export const StockMovementType = {
+  INITIALIZATION: 'INITIALIZATION',
   RESTOCK: 'RESTOCK',
   SALE: 'SALE',
   RETURN: 'RETURN',
