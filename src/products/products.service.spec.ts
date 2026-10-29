@@ -42,6 +42,15 @@ describe('ProductsService', () => {
     expect(prisma.product.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 5, take: 5, where: { isActive: true } }));
     expect(result.pagination).toEqual({ page: 2, limit: 5, total: 1, totalPages: 1 });
   });
+  it('keeps pagination offsets within the supported range at minimum, ordinary, and maximum pages', async () => {
+    for (const [page, limit, expectedSkip] of [[1, 100, 0], [25, 40, 960], [10_000, 100, 999_900]]) {
+      await service.findAll({ page, limit });
+      expect(prisma.product.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+        skip: expectedSkip,
+        take: limit,
+      }));
+    }
+  });
   it('rejects inconsistent price ranges and hides inactive products', async () => {
     await expect(service.findAll({ minPrice: 9, maxPrice: 2 })).rejects.toBeInstanceOf(UnprocessableEntityException);
     prisma.product.findFirst.mockResolvedValue(null);

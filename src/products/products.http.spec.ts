@@ -74,4 +74,26 @@ describe('Products HTTP', () => {
     const result = await request(app.getHttpServer()).get('/api/products/slug/tea').expect(200);
     expect(result.body.data.slug).toBe('tea');
   });
+
+  it('accepts bounded pages and rejects excessive pages before querying Prisma', async () => {
+    const findMany = prisma.product.findMany as ReturnType<typeof vi.fn>;
+    const count = prisma.product.count as ReturnType<typeof vi.fn>;
+
+    for (const [query, expectedSkip] of [['page=1&limit=100', 0], ['page=25&limit=40', 960], ['page=10000&limit=100', 999_900]]) {
+      findMany.mockClear();
+      count.mockClear();
+      await request(app.getHttpServer()).get(`/api/products?${query}`).expect(200);
+      expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: expectedSkip }));
+      expect(count).toHaveBeenCalledOnce();
+    }
+
+    for (const page of ['10001', '999999999999999999999999999999']) {
+      findMany.mockClear();
+      count.mockClear();
+      const response = await request(app.getHttpServer()).get(`/api/products?page=${page}`).expect(400);
+      expect(response.body).toMatchObject({ success: false, statusCode: 400 });
+      expect(findMany).not.toHaveBeenCalled();
+      expect(count).not.toHaveBeenCalled();
+    }
+  });
 });

@@ -13,8 +13,16 @@ import {
 
 const sortableFields = ['name', 'price', 'createdAt', 'updatedAt'] as const;
 
+// Caps the largest supported offset at 999,900 rows when limit is 100.
+export const MAX_PRODUCT_PAGE = 10_000;
+
 export class QueryProductsDto {
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PRODUCT_PAGE)
+  page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number =
     20;
   @IsOptional() @IsIn(sortableFields) sortBy?: (typeof sortableFields)[number] =
