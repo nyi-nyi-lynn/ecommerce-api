@@ -24,6 +24,7 @@ describe('Orders HTTP', () => {
     })) } };
     orders = {
       create: vi.fn(async (userId, dto) => ({ id: 1, userId, items: dto.items, totalAmount: '7.50', status: 'PENDING', paymentMethod: 'COD', paymentStatus: 'PENDING' })),
+      checkout: vi.fn(async (userId, dto) => ({ id: 2, userId, items: [{ productId: 5, quantity: 2 }], totalAmount: '7.50', status: 'PENDING', paymentMethod: 'COD', paymentStatus: 'PENDING', shippingName: dto.shippingName })),
       listMine: vi.fn(async (userId, query) => ({ items: [{ id: 1, userId }], pagination: { page: query.page, limit: query.limit, total: 1, totalPages: 1 } })),
       findMine: vi.fn(async (userId, id) => ({ id, userId })),
       cancelMine: vi.fn(async (userId, id) => ({ id, userId, status: 'CANCELLED' })),
@@ -51,6 +52,7 @@ describe('Orders HTTP', () => {
   const token = (id: number, role: string) => jwt.sign({ sub: id, role });
   const as = (id: number, role = 'CUSTOMER') => ({ Authorization: `Bearer ${token(id, role)}` });
   const body = { items: [{ productId: 5, quantity: 2 }], shippingName: 'Ada', shippingPhone: '555', shippingAddress: '1 Main St' };
+  const checkoutBody = { shippingName: 'Ada', shippingPhone: '555', shippingAddress: '1 Main St' };
 
   it('requires authentication and derives order owner from verified JWT subject', async () => {
     await request(app.getHttpServer()).post('/api/orders').send(body).expect(401);
@@ -58,6 +60,31 @@ describe('Orders HTTP', () => {
     expect(response.body).toMatchObject({ success: true, data: { userId: 11, paymentStatus: 'PENDING' } });
     expect(response.body.data.data).toBeUndefined();
     expect(orders.create).toHaveBeenCalledWith(11, expect.objectContaining({ items: [{ productId: 5, quantity: 2 }] }));
+  });
+
+  it('checks out the authenticated owner’s Cart and preserves the success envelope', async () => {
+    await request(app.getHttpServer()).post('/api/orders/checkout').send(checkoutBody).expect(401);
+    const response = await request(app.getHttpServer()).post('/api/orders/checkout').set(as(11)).send(checkoutBody).expect(201);
+    expect(response.body).toMatchObject({ success: true, data: { userId: 11, status: 'PENDING', paymentMethod: 'COD', paymentStatus: 'PENDING' } });
+    expect(response.body.data.data).toBeUndefined();
+    expect(orders.checkout).toHaveBeenCalledWith(11, expect.objectContaining(checkoutBody));
+  });
+
+  it('rejects missing shipping fields and client-supplied Cart or order data', async () => {
+    for (const invalid of [
+      { shippingName: 'Ada', shippingPhone: '555' },
+      { ...checkoutBody, userId: 99 },
+      { ...checkoutBody, cartId: 7 },
+      { ...checkoutBody, items: [{ productId: 5, quantity: 1 }] },
+      { ...checkoutBody, totalAmount: 1 },
+      { ...checkoutBody, shippingName: ' '.repeat(101) },
+      { ...checkoutBody, shippingPhone: 'x'.repeat(31) },
+      { ...checkoutBody, shippingAddress: 'x'.repeat(5001) },
+      { ...checkoutBody, note: 'x'.repeat(501) },
+    ]) {
+      await request(app.getHttpServer()).post('/api/orders/checkout').set(as(11)).send(invalid).expect(400);
+    }
+    expect(orders.checkout).not.toHaveBeenCalled();
   });
 
   it('rejects unknown and client-managed fields plus invalid order lines before service calls', async () => {

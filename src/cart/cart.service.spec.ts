@@ -14,6 +14,7 @@ describe('CartService', () => {
     tx = {
       product: { findUnique: vi.fn(async () => product) },
       $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (strings[0].includes('SELECT "id" FROM "Cart"')) return [{ id: 3 }];
         if (strings[0].includes('INSERT INTO "Cart"')) return [{ id: 3 }];
         const [, productId, quantity] = values as number[];
         const row = cartItems.find((item) => item.productId === productId);
@@ -23,15 +24,6 @@ describe('CartService', () => {
         } else cartItems.push({ productId, quantity });
         return [{ id: 1 }];
       }),
-    };
-    prisma = {
-      $transaction: vi.fn(async (callback) => callback(tx)),
-      cart: {
-        findUnique: vi.fn(async ({ select }) => {
-          if (select?.id) return { id: 3 };
-          return cartItems.length ? { items: cartItems.map((item) => ({ ...item, product })) } : null;
-        }),
-      },
       cartItem: {
         updateMany: vi.fn(async ({ where, data }) => {
           const item = cartItems.find((entry) => entry.productId === where.productId);
@@ -43,6 +35,15 @@ describe('CartService', () => {
           const before = cartItems.length;
           cartItems = where.productId === undefined ? [] : cartItems.filter((item) => item.productId !== where.productId);
           return { count: before - cartItems.length };
+        }),
+      },
+    };
+    prisma = {
+      $transaction: vi.fn(async (callback) => callback(tx)),
+      cart: {
+        findUnique: vi.fn(async ({ select }) => {
+          if (select?.id) return { id: 3 };
+          return cartItems.length ? { items: cartItems.map((item) => ({ ...item, product })) } : null;
         }),
       },
     };
@@ -73,7 +74,9 @@ describe('CartService', () => {
     expect((await service.removeItem(2, 7)).items).toEqual([]);
     await service.addItem(2, { productId: 7, quantity: 1 });
     expect(await service.clearCart(2)).toEqual({ items: [], subtotal: new Prisma.Decimal(0) });
-    expect(prisma.cartItem.deleteMany).toHaveBeenLastCalledWith({ where: { cartId: 3 } });
+    expect(tx.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: 3 } });
+    expect(tx.cartItem.updateMany).toHaveBeenCalledWith({ where: { cartId: 3, productId: 7 }, data: { quantity: 9 } });
+    expect(tx.$queryRaw.mock.calls.filter(([strings]: [TemplateStringsArray]) => strings.join('?').includes('FOR UPDATE'))).toHaveLength(3);
   });
 
   it('retains inactive existing lines but rejects adding unavailable products', async () => {

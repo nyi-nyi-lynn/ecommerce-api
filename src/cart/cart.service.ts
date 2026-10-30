@@ -62,14 +62,6 @@ export class CartService {
     this.validateInt(dto.quantity, 'Quantity');
 
     await this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({
-        where: { id: dto.productId },
-        select: { id: true, isActive: true },
-      });
-      if (!product || !product.isActive) {
-        throw new UnprocessableEntityException('Product is unavailable.');
-      }
-
       // Cart.userId is unique. Let PostgreSQL resolve concurrent first-adds
       // against that constraint, avoiding an application read-then-create race.
       const carts = await tx.$queryRaw<Array<{ id: number }>>`
@@ -81,6 +73,14 @@ export class CartService {
       `;
       const cart = carts[0];
       if (!cart) throw new ConflictException('Cart could not be created.');
+
+      const product = await tx.product.findUnique({
+        where: { id: dto.productId },
+        select: { id: true, isActive: true },
+      });
+      if (!product || !product.isActive) {
+        throw new UnprocessableEntityException('Product is unavailable.');
+      }
 
       // Use PostgreSQL's unique-key UPSERT so increments are atomic. The WHERE
       // clause prevents integer overflow before the addition is evaluated.
@@ -105,42 +105,46 @@ export class CartService {
     this.validateUserId(userId);
     this.validateInt(productId, 'Product ID');
     this.validateInt(dto.quantity, 'Quantity');
-    const cart = await this.prisma.cart.findUnique({
-      where: { userId },
-      select: { id: true },
+    await this.prisma.$transaction(async (tx) => {
+      const cart = await this.lockCart(tx, userId);
+      if (!cart) throw new NotFoundException('Cart item not found.');
+      const result = await tx.cartItem.updateMany({
+        where: { cartId: cart.id, productId },
+        data: { quantity: dto.quantity },
+      });
+      if (result.count === 0) throw new NotFoundException('Cart item not found.');
     });
-    if (!cart) throw new NotFoundException('Cart item not found.');
-    const result = await this.prisma.cartItem.updateMany({
-      where: { cartId: cart.id, productId },
-      data: { quantity: dto.quantity },
-    });
-    if (result.count === 0) throw new NotFoundException('Cart item not found.');
     return this.getCart(userId);
   }
 
   async removeItem(userId: number, productId: number) {
     this.validateUserId(userId);
     this.validateInt(productId, 'Product ID');
-    const cart = await this.prisma.cart.findUnique({
-      where: { userId },
-      select: { id: true },
+    await this.prisma.$transaction(async (tx) => {
+      const cart = await this.lockCart(tx, userId);
+      if (!cart) throw new NotFoundException('Cart item not found.');
+      const result = await tx.cartItem.deleteMany({
+        where: { cartId: cart.id, productId },
+      });
+      if (result.count === 0) throw new NotFoundException('Cart item not found.');
     });
-    if (!cart) throw new NotFoundException('Cart item not found.');
-    const result = await this.prisma.cartItem.deleteMany({
-      where: { cartId: cart.id, productId },
-    });
-    if (result.count === 0) throw new NotFoundException('Cart item not found.');
     return this.getCart(userId);
   }
 
   async clearCart(userId: number) {
     this.validateUserId(userId);
-    const cart = await this.prisma.cart.findUnique({
-      where: { userId },
-      select: { id: true },
+    await this.prisma.$transaction(async (tx) => {
+      const cart = await this.lockCart(tx, userId);
+      if (cart) await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
     });
-    if (cart) await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
     return { items: [], subtotal: new Prisma.Decimal(0) };
+  }
+
+  private async lockCart(tx: Prisma.TransactionClient, userId: number) {
+    const carts = await tx.$queryRaw<Array<{ id: number }>>`
+      SELECT "id" FROM "Cart" WHERE "userId" = ${userId} FOR UPDATE
+    `;
+    return carts[0] ?? null;
   }
 
   private toResponse(items: CartItemRow[]) {

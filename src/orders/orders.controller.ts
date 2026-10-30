@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
+import { CheckoutOrderDto } from './dto/checkout-order.dto.js';
 import { QueryAdminOrdersDto, QueryOrdersDto } from './dto/query-orders.dto.js';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import { OrdersService } from './orders.service.js';
@@ -29,6 +30,15 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard)
   create(@Req() request: AuthenticatedRequest, @Body() dto: CreateOrderDto) {
     return this.orders.create(request.user.sub, dto);
+  }
+
+  @Post('checkout')
+  @UseGuards(JwtAuthGuard)
+  checkout(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: CheckoutOrderDto,
+  ) {
+    return this.orders.checkout(request.user.sub, dto);
   }
 
   @Get()
