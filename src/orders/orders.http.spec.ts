@@ -87,6 +87,19 @@ describe('Orders HTTP', () => {
     expect(orders.checkout).not.toHaveBeenCalled();
   });
 
+  it('accepts COD and MANUAL, defaults omitted checkout method to COD, and rejects GATEWAY', async () => {
+    await request(app.getHttpServer()).post('/api/orders').set(as(11))
+      .send({ ...body, paymentMethod: 'MANUAL' }).expect(201);
+    await request(app.getHttpServer()).post('/api/orders/checkout').set(as(11))
+      .send({ ...checkoutBody, paymentMethod: 'COD' }).expect(201);
+    await request(app.getHttpServer()).post('/api/orders').set(as(11))
+      .send({ ...body, paymentMethod: 'GATEWAY' }).expect(400);
+    await request(app.getHttpServer()).post('/api/orders/checkout').set(as(11))
+      .send({ ...checkoutBody, paymentMethod: 'GATEWAY' }).expect(400);
+    expect(orders.create).toHaveBeenCalledWith(11, expect.objectContaining({ paymentMethod: 'MANUAL' }));
+    expect(orders.checkout).toHaveBeenCalledWith(11, expect.objectContaining({ paymentMethod: 'COD' }));
+  });
+
   it('rejects unknown and client-managed fields plus invalid order lines before service calls', async () => {
     const header = as(11);
     for (const invalid of [

@@ -5,6 +5,7 @@ import {
   ArrayUnique,
   IsArray,
   IsInt,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -13,6 +14,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { PaymentMethod } from '../../generated/prisma/client.js';
 
 export const MAX_ORDER_ITEMS = 50;
 export const MAX_ORDER_PRODUCT_ID = 2_147_483_647;
@@ -33,6 +35,10 @@ export class CreateOrderItemDto {
 }
 
 export class CreateOrderDto {
+  @IsOptional()
+  @IsIn([PaymentMethod.COD, PaymentMethod.MANUAL])
+  paymentMethod?: PaymentMethod;
+
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(MAX_ORDER_ITEMS)

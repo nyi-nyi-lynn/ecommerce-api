@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { OrderStatus, Prisma } from '../generated/prisma/client.js';
+import { OrderStatus, PaymentMethod, Prisma } from '../generated/prisma/client.js';
 import { OrdersService } from './orders.service.js';
 
 describe('OrdersService', () => {
@@ -101,6 +101,14 @@ describe('OrdersService', () => {
     expect(multi.items.map((item: any) => item.productName)).toEqual(['Coffee', 'Tea']);
     expect(stock.consumeForOrder).toHaveBeenCalledWith(tx, 1, 1, 7, multi.id);
     expect(stock.consumeForOrder).toHaveBeenCalledWith(tx, 2, 2, 7, multi.id);
+  });
+
+  it('supports manual payment selection and defaults omitted methods to COD', async () => {
+    const manual = await service.create(7, { ...dto([{ productId: 1, quantity: 1 }]), paymentMethod: PaymentMethod.MANUAL } as any);
+    expect(manual.paymentMethod).toBe(PaymentMethod.MANUAL);
+    const defaulted = await service.create(7, dto([{ productId: 1, quantity: 1 }]) as any);
+    expect(defaulted.paymentMethod).toBe(PaymentMethod.COD);
+    await expect(service.create(7, { ...dto([{ productId: 1, quantity: 1 }]), paymentMethod: PaymentMethod.GATEWAY } as any)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects duplicate, missing, inactive, empty, and invalid quantity items before writes', async () => {
@@ -251,5 +259,23 @@ describe('OrdersService', () => {
     await service.updateStatus(2, { status: OrderStatus.PROCESSING } as any, 2);
     await service.updateStatus(2, { status: OrderStatus.SHIPPED } as any, 2);
     await expect(service.updateStatus(2, { status: OrderStatus.CANCELLED } as any, 2)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('prevents customer and admin cancellation of paid orders before refund support exists', async () => {
+    await service.create(7, dto([{ productId: 1, quantity: 1 }]) as any);
+    orders[0].paymentStatus = 'PAID';
+    await expect(service.cancelMine(7, 1)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.updateStatus(1, { status: OrderStatus.CANCELLED } as any, 2)).rejects.toBeInstanceOf(ConflictException);
+    expect(stock.restoreForOrder).not.toHaveBeenCalled();
+  });
+
+  it('conditionally excludes paid orders when admin cancellation races payment approval', async () => {
+    await service.create(7, dto([{ productId: 1, quantity: 1 }]) as any);
+    tx.order.updateMany.mockImplementationOnce(async ({ where }: { where: Record<string, any> }) => {
+      expect(where).toMatchObject({ paymentStatus: { not: 'PAID' } });
+      return { count: 0 };
+    });
+    await expect(service.updateStatus(1, { status: OrderStatus.CANCELLED } as any, 2)).rejects.toBeInstanceOf(ConflictException);
+    expect(stock.restoreForOrder).not.toHaveBeenCalled();
   });
 });

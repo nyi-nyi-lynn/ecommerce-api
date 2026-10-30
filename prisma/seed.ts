@@ -22,6 +22,9 @@ const permissions = [
   ['stock:update', 'Update stock'],
   ['order:read', 'Read orders'],
   ['order:update', 'Update orders'],
+  ['payment:read', 'Read payments and payment history'],
+  ['payment:update', 'Review manual payment attempts'],
+  ['payment:collect', 'Confirm cash on delivery collection'],
   ['user:manage', 'Manage users'],
   ['role:manage', 'Manage roles and permissions'],
 ] as const;

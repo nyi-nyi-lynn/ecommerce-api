@@ -1,12 +1,18 @@
 import { Transform } from 'class-transformer';
 import {
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
 } from 'class-validator';
+import { PaymentMethod } from '../../generated/prisma/client.js';
 
 export class CheckoutOrderDto {
+  @IsOptional()
+  @IsIn([PaymentMethod.COD, PaymentMethod.MANUAL])
+  paymentMethod?: PaymentMethod;
+
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @IsNotEmpty()

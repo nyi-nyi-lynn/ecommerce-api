@@ -60,7 +60,7 @@ const allowedTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
 type OrderLine = { productId: number; quantity: number };
 type OrderShipping = Pick<
   CreateOrderDto | CheckoutOrderDto,
-  'shippingName' | 'shippingPhone' | 'shippingAddress' | 'note'
+  'shippingName' | 'shippingPhone' | 'shippingAddress' | 'note' | 'paymentMethod'
 >;
 
 @Injectable()
@@ -71,6 +71,7 @@ export class OrdersService {
   ) {}
 
   async create(userId: number, dto: CreateOrderDto) {
+    this.validatePaymentMethod(dto.paymentMethod);
     const requested = dto.items ?? [];
     this.validateOrderLines(requested);
 
@@ -80,6 +81,7 @@ export class OrdersService {
   }
 
   async checkout(userId: number, dto: CheckoutOrderDto) {
+    this.validatePaymentMethod(dto.paymentMethod);
     return this.prisma.$transaction(async (tx) => {
       // Serialize checkout and Cart writes for this owner. The next statement
       // reads CartItems after any preceding checkout has committed.
@@ -110,6 +112,12 @@ export class OrdersService {
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
       return order;
     });
+  }
+
+  private validatePaymentMethod(method?: PaymentMethod) {
+    if (method !== undefined && method !== PaymentMethod.COD && method !== PaymentMethod.MANUAL) {
+      throw new BadRequestException('Unsupported payment method.');
+    }
   }
 
   private validateOrderLines(requested: OrderLine[]) {
@@ -194,7 +202,7 @@ export class OrdersService {
         userId,
         totalAmount,
         status: OrderStatus.PENDING,
-        paymentMethod: PaymentMethod.COD,
+        paymentMethod: dto.paymentMethod ?? PaymentMethod.COD,
         paymentStatus: PaymentStatus.PENDING,
         shippingName: dto.shippingName.trim(),
         shippingPhone: dto.shippingPhone.trim(),
@@ -291,6 +299,7 @@ export class OrdersService {
         select: {
           id: true,
           status: true,
+          paymentStatus: true,
           items: { select: { productId: true, quantity: true } },
         },
       });
@@ -300,9 +309,13 @@ export class OrdersService {
           'Customers may cancel only pending orders.',
         );
       }
+      if (order.paymentStatus === PaymentStatus.PAID) {
+        throw new ConflictException('Paid orders cannot be cancelled without refund support.');
+      }
       await this.cancelAndRestore(tx, order, userId, {
         userId,
         status: OrderStatus.PENDING,
+        paymentStatus: { not: PaymentStatus.PAID },
       });
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
@@ -322,6 +335,7 @@ export class OrdersService {
         select: {
           id: true,
           status: true,
+          paymentStatus: true,
           items: { select: { productId: true, quantity: true } },
         },
       });
@@ -332,9 +346,14 @@ export class OrdersService {
         );
       }
 
+      if (dto.status === OrderStatus.CANCELLED && order.paymentStatus === PaymentStatus.PAID) {
+        throw new ConflictException('Paid orders cannot be cancelled without refund support.');
+      }
+
       if (dto.status === OrderStatus.CANCELLED) {
         await this.cancelAndRestore(tx, order, actorId, {
           status: order.status,
+          paymentStatus: { not: PaymentStatus.PAID },
         });
       } else {
         const updated = await tx.order.updateMany({
@@ -363,7 +382,7 @@ export class OrdersService {
       items: Array<{ productId: number; quantity: number }>;
     },
     actorId: number,
-    ownerFilter: { userId?: number; status: OrderStatus },
+    ownerFilter: { userId?: number; status: OrderStatus; paymentStatus?: { not: PaymentStatus } },
   ) {
     const updated = await tx.order.updateMany({
       where: { id: order.id, ...ownerFilter },
