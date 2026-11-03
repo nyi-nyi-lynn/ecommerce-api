@@ -10,7 +10,7 @@
  * This file does not contain a `PrismaClient` class, nor several other helpers that are intended as server-side only.
  * See `client.ts` for the standard, server-side entry point.
  *
- * 🟢 You can import this file directly.
+ * ðŸŸ¢ You can import this file directly.
  */
 
 import * as Prisma from './internal/prismaNamespaceBrowser.js'

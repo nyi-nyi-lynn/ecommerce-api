@@ -1,50 +1,84 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { QueryProductsDto } from './dto/query-products.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
+import { UploadsService } from '../modules/uploads/uploads.service.js';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly uploads?: UploadsService,
+  ) {}
 
-  async create(dto: CreateProductDto) {
+  async create(dto: CreateProductDto, image?: Express.Multer.File, userId?: number) {
     await this.ensureCategory(dto.categoryId);
     await this.ensureUnique(dto.sku.trim(), dto.slug.trim());
+    let uploaded: { secure_url: string; public_id: string } | undefined;
+    if (image) {
+      if (!this.uploads) throw new ServiceUnavailableException('Product image uploads are unavailable.');
+      uploaded = await this.uploads.uploadProductImage(image, userId);
+    }
     try {
-      return await this.prisma.product.create({ data: this.createData(dto) });
+      return await this.prisma.product.create({ data: this.createData(dto, uploaded) });
     } catch (error) {
+      if (uploaded) await this.uploads?.deleteProductImage(uploaded.public_id);
       if (this.hasCode(error, 'P2002')) throw new ConflictException('A product with this SKU or slug already exists.');
       if (this.hasCode(error, 'P2003')) throw new UnprocessableEntityException('The selected category does not exist.');
       throw error;
     }
   }
 
-  async update(id: number, dto: UpdateProductDto) {
-    if (!(await this.prisma.product.findUnique({ where: { id }, select: { id: true } }))) {
+  async update(id: number, dto: UpdateProductDto, image?: Express.Multer.File, userId?: number) {
+    const current = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true, imageUrl: true, imagePublicId: true },
+    });
+    if (!current) {
       throw new NotFoundException('Product not found.');
     }
     if (dto.categoryId !== undefined) await this.ensureCategory(dto.categoryId);
     await this.ensureUnique(dto.sku?.trim(), dto.slug?.trim(), id);
+    let uploaded: { secure_url: string; public_id: string } | undefined;
+    if (image) {
+      if (!this.uploads) throw new ServiceUnavailableException('Product image uploads are unavailable.');
+      uploaded = await this.uploads.uploadProductImage(image, userId);
+    }
     const data: Prisma.ProductUpdateInput = {
       ...(dto.name !== undefined && { name: dto.name.trim() }),
       ...(dto.slug !== undefined && { slug: dto.slug.trim() }),
       ...(dto.sku !== undefined && { sku: dto.sku.trim() }),
       ...(dto.description !== undefined && { description: dto.description.trim() || null }),
       ...(dto.price !== undefined && { price: new Prisma.Decimal(dto.price) }),
-      ...(dto.imageUrl !== undefined && { imageUrl: dto.imageUrl }),
+      ...(uploaded ? { imageUrl: uploaded.secure_url, imagePublicId: uploaded.public_id } :
+        dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl, imagePublicId: null } : {}),
       ...(dto.isActive !== undefined && { isActive: dto.isActive }),
       ...(dto.categoryId !== undefined && { category: { connect: { id: dto.categoryId } } }),
     };
+    let updated;
     try {
-      return await this.prisma.product.update({ where: { id }, data });
+      updated = await this.prisma.product.update({ where: { id }, data });
     } catch (error) {
+      if (uploaded) {
+        await this.uploads?.deleteProductImage(uploaded.public_id);
+      }
       if (this.hasCode(error, 'P2002')) throw new ConflictException('A product with this SKU or slug already exists.');
       if (this.hasCode(error, 'P2025')) throw new NotFoundException('Product not found.');
       if (this.hasCode(error, 'P2003')) throw new UnprocessableEntityException('The selected category does not exist.');
       throw error;
     }
+
+    if (
+      current.imagePublicId &&
+      current.imagePublicId !== uploaded?.public_id &&
+      (uploaded !== undefined || dto.imageUrl !== undefined)
+    ) {
+      await this.uploads?.deleteProductImage(current.imagePublicId);
+    }
+    return updated;
   }
 
   async findAll(query: QueryProductsDto) {
@@ -84,11 +118,13 @@ export class ProductsService {
     return product;
   }
 
-  private createData(dto: CreateProductDto): Prisma.ProductCreateInput {
+  private createData(dto: CreateProductDto, uploaded?: { secure_url: string; public_id: string }): Prisma.ProductCreateInput {
     return {
       name: dto.name.trim(), slug: dto.slug.trim(), sku: dto.sku.trim(),
       description: dto.description?.trim() || null, price: new Prisma.Decimal(dto.price),
-      imageUrl: dto.imageUrl ?? null, category: { connect: { id: dto.categoryId } },
+      imageUrl: uploaded?.secure_url ?? dto.imageUrl ?? null,
+      imagePublicId: uploaded?.public_id ?? null,
+      category: { connect: { id: dto.categoryId } },
     };
   }
 
@@ -111,4 +147,5 @@ export class ProductsService {
   private hasCode(error: unknown, code: string) {
     return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
   }
+
 }

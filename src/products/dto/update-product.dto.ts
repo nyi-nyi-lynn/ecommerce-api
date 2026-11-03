@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
@@ -74,7 +74,7 @@ export class UpdateProductDto {
   @Min(1)
   categoryId?: number;
   @ApiPropertyOptional({
-    description: 'Product image URL; file upload is not supported.',
+    description: 'Legacy image URL. New clients should upload the image multipart field instead.',
     example: 'https://cdn.example.com/product.jpg',
     maxLength: 2048,
     format: 'uri',
@@ -90,5 +90,6 @@ export class UpdateProductDto {
   })
   @IsOptional()
   @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
   isActive?: boolean;
 }

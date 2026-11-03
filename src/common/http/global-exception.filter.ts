@@ -8,6 +8,7 @@ import {
 import type { Request, Response } from 'express';
 import { STATUS_CODES } from 'node:http';
 import { Prisma } from '../../generated/prisma/client.js';
+import { MulterError } from 'multer';
 
 interface ErrorEnvelope {
   success: false;
@@ -42,6 +43,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     message: string | string[];
     error: string;
   } {
+    if (exception instanceof MulterError) {
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        return {
+          statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+          message: 'The product image must be 5 MB or smaller.',
+          error: STATUS_CODES[HttpStatus.PAYLOAD_TOO_LARGE] ?? 'Payload Too Large',
+        };
+      }
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: exception.code === 'LIMIT_UNEXPECTED_FILE'
+          ? 'Use the predictable file field name: file.'
+          : 'The uploaded file is invalid.',
+        error: STATUS_CODES[HttpStatus.BAD_REQUEST] ?? 'Bad Request',
+      };
+    }
     if (
       exception instanceof Prisma.PrismaClientKnownRequestError &&
       exception.code === 'P2002'

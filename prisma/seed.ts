@@ -27,6 +27,7 @@ const permissions = [
   ['payment:collect', 'Confirm cash on delivery collection'],
   ['user:manage', 'Manage users'],
   ['role:manage', 'Manage roles and permissions'],
+  ['media:upload', 'Upload product media'],
 ] as const;
 
 export async function seed() {

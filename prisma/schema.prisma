@@ -132,6 +132,7 @@ model Product {
   sku         String   @unique @db.VarChar(100)
   price       Decimal  @db.Decimal(12, 2)
   imageUrl    String?
+  imagePublicId String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

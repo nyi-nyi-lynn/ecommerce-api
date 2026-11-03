@@ -6,7 +6,7 @@
 /*
  * WARNING: This is an internal file that is subject to change!
  *
- * 🛑 Under no circumstances should you import this file directly! 🛑
+ * ðŸ›‘ Under no circumstances should you import this file directly! ðŸ›‘
  *
  * All exports from this file are wrapped under a `Prisma` namespace object in the browser.ts file.
  * While this enables partial backward compatibility, it is not part of the stable public API.
@@ -163,6 +163,7 @@ export const ProductScalarFieldEnum = {
   sku: 'sku',
   price: 'price',
   imageUrl: 'imageUrl',
+  imagePublicId: 'imagePublicId',
   isActive: 'isActive',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'

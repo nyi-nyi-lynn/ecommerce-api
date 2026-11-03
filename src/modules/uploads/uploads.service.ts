@@ -1,0 +1,113 @@
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  PayloadTooLargeException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { UploadApiResponse } from 'cloudinary';
+import { v2 as cloudinarySdk } from 'cloudinary';
+import { CLOUDINARY } from './cloudinary.provider.js';
+
+export const PRODUCT_IMAGE_FOLDER = 'ecommerce/products';
+export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
+
+export type ProductImageAsset = Pick<
+  UploadApiResponse,
+  'secure_url' | 'public_id' | 'format' | 'width' | 'height' | 'bytes'
+>;
+
+@Injectable()
+export class UploadsService {
+  private readonly logger = new Logger(UploadsService.name);
+
+  constructor(
+    @Inject(CLOUDINARY) private readonly cloudinary: typeof cloudinarySdk,
+    private readonly config: ConfigService,
+  ) {}
+
+  async uploadProductImage(
+    file: Express.Multer.File | undefined,
+    userId?: number,
+    resourceFolder = userId === undefined ? PRODUCT_IMAGE_FOLDER : `${PRODUCT_IMAGE_FOLDER}/users/${userId}`,
+  ) {
+    if (!file) throw new BadRequestException('Product image file is required.');
+    if (!file.size) throw new BadRequestException('The product image file is empty.');
+    if (file.size > MAX_PRODUCT_IMAGE_BYTES) throw new PayloadTooLargeException('The product image must be 5 MB or smaller.');
+
+    const { fileTypeFromBuffer } = await import('file-type');
+    const detected = await fileTypeFromBuffer(file.buffer);
+    if (!detected || !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(detected.mime)) {
+      throw new BadRequestException('Only JPEG, PNG, WebP, and AVIF product images are allowed.');
+    }
+
+    const cloudinary = this.requireCloudinary();
+    try {
+      const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: 'image',
+            folder: resourceFolder,
+            overwrite: false,
+            unique_filename: true,
+          },
+          (error, uploaded) => {
+            if (error || !uploaded) {
+              reject(error ?? new Error('Cloudinary returned no upload result.'));
+              return;
+            }
+
+            resolve(uploaded);
+          },
+        );
+        stream.end(file.buffer);
+      });
+
+      return {
+        secure_url: result.secure_url,
+        public_id: result.public_id,
+        format: result.format,
+        width: result.width,
+        height: result.height,
+        bytes: result.bytes,
+      };
+    } catch {
+      throw new ServiceUnavailableException('Product image upload could not be completed.');
+    }
+  }
+
+  async uploadImages(files: Express.Multer.File[] | undefined, folder: string) {
+    if (!files?.length) return [];
+    return Promise.all(files.map((file) => this.uploadProductImage(file, undefined, folder)));
+  }
+
+  async deleteProductImage(publicId: string) {
+    if (!this.isOwnedProductAsset(publicId)) return false;
+    const cloudinary = this.requireCloudinary();
+    try {
+      await cloudinary.uploader.destroy(publicId, { resource_type: 'image', invalidate: true });
+      return true;
+    } catch {
+      this.logger.error('Cloudinary product image cleanup failed.');
+      return false;
+    }
+  }
+
+  isOwnedProductAsset(publicId: string) {
+    return publicId.startsWith(`${PRODUCT_IMAGE_FOLDER}/users/`);
+  }
+
+  private requireCloudinary() {
+    const cloudName = this.config.get<string>('CLOUDINARY_CLOUD_NAME')?.trim();
+    const apiKey = this.config.get<string>('CLOUDINARY_API_KEY')?.trim();
+    const apiSecret = this.config.get<string>('CLOUDINARY_API_SECRET')?.trim();
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new ServiceUnavailableException(
+        'Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
+      );
+    }
+    return this.cloudinary;
+  }
+}

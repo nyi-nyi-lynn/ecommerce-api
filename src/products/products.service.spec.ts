@@ -31,6 +31,57 @@ describe('ProductsService', () => {
     prisma.product.findFirst.mockResolvedValue({ id: 9 });
     await expect(service.create(valid)).rejects.toBeInstanceOf(ConflictException);
   });
+  it('persists image URL and Cloudinary public ID metadata', async () => {
+    await service.create({ ...valid, imageUrl: 'https://example.com/tea.jpg' }, undefined, 7);
+    await service.update(3, { imageUrl: 'https://example.com/tea-new.jpg' }, undefined, 7);
+    expect(prisma.product.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ imageUrl: 'https://example.com/tea.jpg', imagePublicId: null }),
+    }));
+    expect(prisma.product.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ imageUrl: 'https://example.com/tea-new.jpg', imagePublicId: null }),
+    }));
+  });
+  it('preserves imageUrl-only products when public ID is absent', async () => {
+    await expect(service.create({ ...valid, imageUrl: 'https://example.com/external.jpg' }, undefined, 7)).resolves.toBeDefined();
+  });
+  it('deletes a previous Cloudinary asset only after the replacement is saved', async () => {
+    const deleteImage = vi.fn().mockResolvedValue(true);
+    const uploadImage = vi.fn().mockResolvedValue({
+      secure_url: 'https://example.com/new.jpg',
+      public_id: 'ecommerce/products/users/7/new',
+    });
+    service = new ProductsService(prisma as PrismaService, {
+      uploadProductImage: uploadImage,
+      deleteProductImage: deleteImage,
+    } as any);
+    prisma.product.findUnique.mockResolvedValue({
+      id: 3,
+      imageUrl: 'https://example.com/old.jpg',
+      imagePublicId: 'ecommerce/products/users/7/old',
+    });
+    await service.update(3, {
+      imageUrl: 'https://example.com/new.jpg',
+    }, { buffer: Buffer.from([1]) } as Express.Multer.File, 7);
+    expect(prisma.product.update.mock.invocationCallOrder[0]).toBeLessThan(deleteImage.mock.invocationCallOrder[0]);
+    expect(deleteImage).toHaveBeenCalledWith('ecommerce/products/users/7/old');
+  });
+  it('cleans up a newly uploaded image when the product database update fails', async () => {
+    const deleteImage = vi.fn().mockResolvedValue(true);
+    const uploadImage = vi.fn().mockResolvedValue({
+      secure_url: 'https://example.com/new.jpg',
+      public_id: 'ecommerce/products/users/7/new',
+    });
+    service = new ProductsService(prisma as PrismaService, {
+      uploadProductImage: uploadImage,
+      deleteProductImage: deleteImage,
+    } as any);
+    prisma.product.findUnique.mockResolvedValue({ id: 3, imageUrl: null, imagePublicId: null });
+    prisma.product.update.mockRejectedValueOnce(new Error('database failure'));
+    await expect(service.update(3, {
+      imageUrl: 'https://example.com/new.jpg',
+    }, { buffer: Buffer.from([1]) } as Express.Multer.File, 7)).rejects.toThrow('database failure');
+    expect(deleteImage).toHaveBeenCalledWith('ecommerce/products/users/7/new');
+  });
   it('allows retaining own identifiers and rejects identifiers owned by another product', async () => {
     await service.update(3, { sku: valid.sku, slug: valid.slug });
     expect(prisma.product.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: { not: 3 } }) }));
