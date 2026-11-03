@@ -2,28 +2,45 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { UploadsService } from '../modules/uploads/uploads.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CategoriesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly uploads?: UploadsService,
+  ) {}
 
   // CREATE
-  async create(dto: CreateCategoryDto) {
+  async create(dto: CreateCategoryDto, image?: Express.Multer.File, userId?: number) {
+    let uploaded: { secure_url: string; public_id: string } | undefined;
+    if (image) {
+      if (!this.uploads) throw new ServiceUnavailableException('Category image uploads are unavailable.');
+      uploaded = await this.uploads.uploadCategoryImage(image, userId);
+    }
     try {
       return await this.prisma.category.create({
         data: {
           name: dto.name.trim(),
           slug: dto.slug.trim(),
           description: dto.description?.trim() || null,
+          imageUrl: uploaded?.secure_url ?? null,
+          imagePublicId: uploaded?.public_id ?? null,
           isActive: dto.isActive ?? true,
         },
       });
     } catch (error: unknown) {
+      if (uploaded) await this.uploads?.deleteCategoryImage(uploaded.public_id);
       if (this.hasPrismaCode(error, 'P2002')) {
         throw new ConflictException(
           'A category with this name or slug already exists.',
@@ -59,14 +76,20 @@ export class CategoriesService {
   }
 
   // UPDATE
-  async update(id: number, dto: UpdateCategoryDto) {
+  async update(id: number, dto: UpdateCategoryDto, image?: Express.Multer.File, userId?: number) {
     const existing = await this.prisma.category.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, imageUrl: true, imagePublicId: true },
     });
 
     if (!existing) {
       throw new NotFoundException('Category not found.');
+    }
+
+    let uploaded: { secure_url: string; public_id: string } | undefined;
+    if (image) {
+      if (!this.uploads) throw new ServiceUnavailableException('Category image uploads are unavailable.');
+      uploaded = await this.uploads.uploadCategoryImage(image, userId);
     }
 
     const data = {
@@ -82,14 +105,20 @@ export class CategoriesService {
       ...(dto.isActive !== undefined && {
         isActive: dto.isActive,
       }),
+      ...(uploaded && {
+        imageUrl: uploaded.secure_url,
+        imagePublicId: uploaded.public_id,
+      }),
     };
 
+    let updated;
     try {
-      return await this.prisma.category.update({
+      updated = await this.prisma.category.update({
         where: { id },
         data,
       });
     } catch (error: unknown) {
+      if (uploaded) await this.uploads?.deleteCategoryImage(uploaded.public_id);
       if (this.hasPrismaCode(error, 'P2002')) {
         throw new ConflictException(
           'A category with this name or slug already exists.',
@@ -102,14 +131,39 @@ export class CategoriesService {
 
       throw error;
     }
+
+    if (uploaded && existing.imagePublicId && existing.imagePublicId !== uploaded.public_id) {
+      await this.uploads?.deleteCategoryImage(existing.imagePublicId);
+    }
+    return updated;
   }
 
   // DELETE
   async remove(id: number) {
+    const existing = await this.prisma.category.findUnique({
+      where: { id },
+      select: { id: true, imagePublicId: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Category not found.');
+    }
+
     try {
-      return await this.prisma.category.delete({
+      const deleted = await this.prisma.category.delete({
         where: { id },
       });
+
+      if (existing.imagePublicId?.trim()) {
+        const cleanupSucceeded = await this.uploads?.deleteCategoryImage(existing.imagePublicId);
+        if (cleanupSucceeded === false) {
+          this.logger.error(
+            `Cloudinary category image cleanup failed for category ${id} and public ID ${existing.imagePublicId}.`,
+          );
+        }
+      }
+
+      return deleted;
     } catch (error: unknown) {
       if (this.hasPrismaCode(error, 'P2025')) {
         throw new NotFoundException('Category not found.');

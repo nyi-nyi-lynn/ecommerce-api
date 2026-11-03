@@ -6,7 +6,7 @@
 /*
  * This file exports the `CartItem` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -131,7 +131,7 @@ export type CartItemAggregateArgs<ExtArgs extends runtime.Types.Extensions.Inter
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` CartItems from the position of the cursor.
+   * Take `±n` CartItems from the position of the cursor.
    */
   take?: number
   /**
@@ -1231,7 +1231,7 @@ export type CartItemFindFirstArgs<ExtArgs extends runtime.Types.Extensions.Inter
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` CartItems from the position of the cursor.
+   * Take `±n` CartItems from the position of the cursor.
    */
   take?: number
   /**
@@ -1283,7 +1283,7 @@ export type CartItemFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extension
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` CartItems from the position of the cursor.
+   * Take `±n` CartItems from the position of the cursor.
    */
   take?: number
   /**
@@ -1335,7 +1335,7 @@ export type CartItemFindManyArgs<ExtArgs extends runtime.Types.Extensions.Intern
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` CartItems from the position of the cursor.
+   * Take `±n` CartItems from the position of the cursor.
    */
   take?: number
   /**

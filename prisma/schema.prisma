@@ -116,6 +116,8 @@ model Category {
   name        String   @unique @db.VarChar(100)
   slug        String   @unique @db.VarChar(120)
   description String?
+  imageUrl    String?
+  imagePublicId String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

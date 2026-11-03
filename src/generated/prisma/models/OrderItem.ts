@@ -6,7 +6,7 @@
 /*
  * This file exports the `OrderItem` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -145,7 +145,7 @@ export type OrderItemAggregateArgs<ExtArgs extends runtime.Types.Extensions.Inte
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` OrderItems from the position of the cursor.
+   * Take `±n` OrderItems from the position of the cursor.
    */
   take?: number
   /**
@@ -1278,7 +1278,7 @@ export type OrderItemFindFirstArgs<ExtArgs extends runtime.Types.Extensions.Inte
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` OrderItems from the position of the cursor.
+   * Take `±n` OrderItems from the position of the cursor.
    */
   take?: number
   /**
@@ -1330,7 +1330,7 @@ export type OrderItemFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensio
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` OrderItems from the position of the cursor.
+   * Take `±n` OrderItems from the position of the cursor.
    */
   take?: number
   /**
@@ -1382,7 +1382,7 @@ export type OrderItemFindManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` OrderItems from the position of the cursor.
+   * Take `±n` OrderItems from the position of the cursor.
    */
   take?: number
   /**

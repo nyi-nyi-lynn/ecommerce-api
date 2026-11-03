@@ -6,7 +6,7 @@
 /*
  * This file exports the `StockMovement` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -167,7 +167,7 @@ export type StockMovementAggregateArgs<ExtArgs extends runtime.Types.Extensions.
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` StockMovements from the position of the cursor.
+   * Take `±n` StockMovements from the position of the cursor.
    */
   take?: number
   /**
@@ -1567,7 +1567,7 @@ export type StockMovementFindFirstArgs<ExtArgs extends runtime.Types.Extensions.
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` StockMovements from the position of the cursor.
+   * Take `±n` StockMovements from the position of the cursor.
    */
   take?: number
   /**
@@ -1619,7 +1619,7 @@ export type StockMovementFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Exte
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` StockMovements from the position of the cursor.
+   * Take `±n` StockMovements from the position of the cursor.
    */
   take?: number
   /**
@@ -1671,7 +1671,7 @@ export type StockMovementFindManyArgs<ExtArgs extends runtime.Types.Extensions.I
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` StockMovements from the position of the cursor.
+   * Take `±n` StockMovements from the position of the cursor.
    */
   take?: number
   /**

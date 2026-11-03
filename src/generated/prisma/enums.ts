@@ -6,7 +6,7 @@
 /*
 * This file exports all enum related types from the schema.
 *
-* ðŸŸ¢ You can import this file directly.
+* 🟢 You can import this file directly.
 */
 
 export const OrderStatus = {

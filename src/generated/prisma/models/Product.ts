@@ -6,7 +6,7 @@
 /*
  * This file exports the `Product` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -163,7 +163,7 @@ export type ProductAggregateArgs<ExtArgs extends runtime.Types.Extensions.Intern
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Products from the position of the cursor.
+   * Take `±n` Products from the position of the cursor.
    */
   take?: number
   /**
@@ -1827,7 +1827,7 @@ export type ProductFindFirstArgs<ExtArgs extends runtime.Types.Extensions.Intern
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Products from the position of the cursor.
+   * Take `±n` Products from the position of the cursor.
    */
   take?: number
   /**
@@ -1879,7 +1879,7 @@ export type ProductFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensions
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Products from the position of the cursor.
+   * Take `±n` Products from the position of the cursor.
    */
   take?: number
   /**
@@ -1931,7 +1931,7 @@ export type ProductFindManyArgs<ExtArgs extends runtime.Types.Extensions.Interna
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Products from the position of the cursor.
+   * Take `±n` Products from the position of the cursor.
    */
   take?: number
   /**

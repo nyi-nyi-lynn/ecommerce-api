@@ -6,7 +6,7 @@
 /*
  * This file exports the `RefreshToken` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -131,7 +131,7 @@ export type RefreshTokenAggregateArgs<ExtArgs extends runtime.Types.Extensions.I
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RefreshTokens from the position of the cursor.
+   * Take `±n` RefreshTokens from the position of the cursor.
    */
   take?: number
   /**
@@ -1431,7 +1431,7 @@ export type RefreshTokenFindFirstArgs<ExtArgs extends runtime.Types.Extensions.I
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RefreshTokens from the position of the cursor.
+   * Take `±n` RefreshTokens from the position of the cursor.
    */
   take?: number
   /**
@@ -1483,7 +1483,7 @@ export type RefreshTokenFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Exten
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RefreshTokens from the position of the cursor.
+   * Take `±n` RefreshTokens from the position of the cursor.
    */
   take?: number
   /**
@@ -1535,7 +1535,7 @@ export type RefreshTokenFindManyArgs<ExtArgs extends runtime.Types.Extensions.In
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RefreshTokens from the position of the cursor.
+   * Take `±n` RefreshTokens from the position of the cursor.
    */
   take?: number
   /**

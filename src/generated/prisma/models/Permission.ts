@@ -6,7 +6,7 @@
 /*
  * This file exports the `Permission` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -101,7 +101,7 @@ export type PermissionAggregateArgs<ExtArgs extends runtime.Types.Extensions.Int
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Permissions from the position of the cursor.
+   * Take `±n` Permissions from the position of the cursor.
    */
   take?: number
   /**
@@ -950,7 +950,7 @@ export type PermissionFindFirstArgs<ExtArgs extends runtime.Types.Extensions.Int
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Permissions from the position of the cursor.
+   * Take `±n` Permissions from the position of the cursor.
    */
   take?: number
   /**
@@ -1002,7 +1002,7 @@ export type PermissionFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensi
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Permissions from the position of the cursor.
+   * Take `±n` Permissions from the position of the cursor.
    */
   take?: number
   /**
@@ -1054,7 +1054,7 @@ export type PermissionFindManyArgs<ExtArgs extends runtime.Types.Extensions.Inte
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Permissions from the position of the cursor.
+   * Take `±n` Permissions from the position of the cursor.
    */
   take?: number
   /**

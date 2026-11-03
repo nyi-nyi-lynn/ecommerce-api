@@ -6,7 +6,7 @@
 /*
  * This file exports the `PaymentEvent` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -139,7 +139,7 @@ export type PaymentEventAggregateArgs<ExtArgs extends runtime.Types.Extensions.I
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` PaymentEvents from the position of the cursor.
+   * Take `±n` PaymentEvents from the position of the cursor.
    */
   take?: number
   /**
@@ -1305,7 +1305,7 @@ export type PaymentEventFindFirstArgs<ExtArgs extends runtime.Types.Extensions.I
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` PaymentEvents from the position of the cursor.
+   * Take `±n` PaymentEvents from the position of the cursor.
    */
   take?: number
   /**
@@ -1357,7 +1357,7 @@ export type PaymentEventFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Exten
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` PaymentEvents from the position of the cursor.
+   * Take `±n` PaymentEvents from the position of the cursor.
    */
   take?: number
   /**
@@ -1409,7 +1409,7 @@ export type PaymentEventFindManyArgs<ExtArgs extends runtime.Types.Extensions.In
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` PaymentEvents from the position of the cursor.
+   * Take `±n` PaymentEvents from the position of the cursor.
    */
   take?: number
   /**

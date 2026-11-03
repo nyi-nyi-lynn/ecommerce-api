@@ -95,4 +95,30 @@ describe('UploadsService', () => {
     await expect(service.deleteProductImage('other/folder/image')).resolves.toBe(false);
     await expect(service.deleteProductImage('ecommerce/products/users/7/image')).resolves.toBe(true);
   });
+
+  it('uploads category images into the category folder', async () => {
+    cloudinary.uploader.upload_stream.mockImplementation((_options: unknown, callback: (error: null, result: any) => void) => ({
+      end: () => callback(null, {
+        secure_url: 'https://res.cloudinary.com/demo/image/upload/category.jpg',
+        public_id: 'ecommerce/categories/users/7/category',
+        format: 'jpg',
+        width: 800,
+        height: 600,
+        bytes: 123,
+      }),
+    }));
+
+    await expect(service.uploadCategoryImage(imageFile(), 7)).resolves.toMatchObject({
+      public_id: 'ecommerce/categories/users/7/category',
+    });
+    expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+      expect.objectContaining({ folder: 'ecommerce/categories/users/7' }),
+      expect.any(Function),
+    );
+  });
+
+  it('only destroys assets in the designated category folder', async () => {
+    await expect(service.deleteCategoryImage('other/folder/image')).resolves.toBe(false);
+    await expect(service.deleteCategoryImage('ecommerce/categories/users/7/image')).resolves.toBe(true);
+  });
 });

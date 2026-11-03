@@ -6,7 +6,7 @@
 /*
  * This file exports the `User` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -141,7 +141,7 @@ export type UserAggregateArgs<ExtArgs extends runtime.Types.Extensions.InternalA
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Users from the position of the cursor.
+   * Take `±n` Users from the position of the cursor.
    */
   take?: number
   /**
@@ -1967,7 +1967,7 @@ export type UserFindFirstArgs<ExtArgs extends runtime.Types.Extensions.InternalA
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Users from the position of the cursor.
+   * Take `±n` Users from the position of the cursor.
    */
   take?: number
   /**
@@ -2019,7 +2019,7 @@ export type UserFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extensions.In
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Users from the position of the cursor.
+   * Take `±n` Users from the position of the cursor.
    */
   take?: number
   /**
@@ -2071,7 +2071,7 @@ export type UserFindManyArgs<ExtArgs extends runtime.Types.Extensions.InternalAr
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` Users from the position of the cursor.
+   * Take `±n` Users from the position of the cursor.
    */
   take?: number
   /**

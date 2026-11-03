@@ -7,19 +7,28 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import multer from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CategoriesService } from './categories.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import type { Request } from 'express';
+import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
+
+type RequestWithUser = Request & { user?: { sub?: number } };
 
 @Controller('categories')
 @ApiTags('Categories')
@@ -53,14 +62,35 @@ export class CategoriesController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('category:create')
   @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        slug: { type: 'string' },
+        description: { type: 'string' },
+        isActive: { type: 'boolean' },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('image', {
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+  }))
   @ApiDocumentEndpoint({
     summary: 'Create category',
     description: `Creates a category. ${DYNAMIC_RBAC_DESCRIPTION}`,
     successStatus: 201,
     errors: [400, 401, 403, 409, 500],
   })
-  create(@Body() dto: CreateCategoryDto) {
-    return this.categoriesService.create(dto);
+  create(
+    @Body() dto: CreateCategoryDto,
+    @UploadedFile() image: Express.Multer.File | undefined,
+    @Req() request: RequestWithUser,
+  ) {
+    return this.categoriesService.create(dto, image, request.user?.sub);
   }
 
   // PATCH /api/categories/:id
@@ -68,6 +98,23 @@ export class CategoriesController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('category:update')
   @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        slug: { type: 'string' },
+        description: { type: 'string' },
+        isActive: { type: 'boolean' },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('image', {
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+  }))
   @ApiDocumentEndpoint({
     summary: 'Update category',
     description: `Updates category fields. ${DYNAMIC_RBAC_DESCRIPTION}`,
@@ -76,8 +123,10 @@ export class CategoriesController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCategoryDto,
+    @UploadedFile() image: Express.Multer.File | undefined,
+    @Req() request: RequestWithUser,
   ) {
-    return this.categoriesService.update(id, dto);
+    return this.categoriesService.update(id, dto, image, request.user?.sub);
   }
 
   // DELETE /api/categories/:id

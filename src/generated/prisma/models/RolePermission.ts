@@ -6,7 +6,7 @@
 /*
  * This file exports the `RolePermission` model and its related types.
  *
- * ðŸŸ¢ You can import this file directly.
+ * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
 import type * as $Enums from "../enums.js"
@@ -99,7 +99,7 @@ export type RolePermissionAggregateArgs<ExtArgs extends runtime.Types.Extensions
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RolePermissions from the position of the cursor.
+   * Take `±n` RolePermissions from the position of the cursor.
    */
   take?: number
   /**
@@ -1063,7 +1063,7 @@ export type RolePermissionFindFirstArgs<ExtArgs extends runtime.Types.Extensions
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RolePermissions from the position of the cursor.
+   * Take `±n` RolePermissions from the position of the cursor.
    */
   take?: number
   /**
@@ -1115,7 +1115,7 @@ export type RolePermissionFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Ext
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RolePermissions from the position of the cursor.
+   * Take `±n` RolePermissions from the position of the cursor.
    */
   take?: number
   /**
@@ -1167,7 +1167,7 @@ export type RolePermissionFindManyArgs<ExtArgs extends runtime.Types.Extensions.
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
    *
-   * Take `Â±n` RolePermissions from the position of the cursor.
+   * Take `±n` RolePermissions from the position of the cursor.
    */
   take?: number
   /**

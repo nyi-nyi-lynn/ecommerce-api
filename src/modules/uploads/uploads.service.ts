@@ -12,6 +12,7 @@ import { v2 as cloudinarySdk } from 'cloudinary';
 import { CLOUDINARY } from './cloudinary.provider.js';
 
 export const PRODUCT_IMAGE_FOLDER = 'ecommerce/products';
+export const CATEGORY_IMAGE_FOLDER = 'ecommerce/categories';
 export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export type ProductImageAsset = Pick<
@@ -33,49 +34,19 @@ export class UploadsService {
     userId?: number,
     resourceFolder = userId === undefined ? PRODUCT_IMAGE_FOLDER : `${PRODUCT_IMAGE_FOLDER}/users/${userId}`,
   ) {
-    if (!file) throw new BadRequestException('Product image file is required.');
-    if (!file.size) throw new BadRequestException('The product image file is empty.');
-    if (file.size > MAX_PRODUCT_IMAGE_BYTES) throw new PayloadTooLargeException('The product image must be 5 MB or smaller.');
+    return this.uploadImage(file, resourceFolder, 'Product');
+  }
 
-    const { fileTypeFromBuffer } = await import('file-type');
-    const detected = await fileTypeFromBuffer(file.buffer);
-    if (!detected || !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(detected.mime)) {
-      throw new BadRequestException('Only JPEG, PNG, WebP, and AVIF product images are allowed.');
-    }
+  async uploadCategoryImage(file: Express.Multer.File | undefined, userId?: number) {
+    return this.uploadImage(
+      file,
+      userId === undefined ? CATEGORY_IMAGE_FOLDER : `${CATEGORY_IMAGE_FOLDER}/users/${userId}`,
+      'Category',
+    );
+  }
 
-    const cloudinary = this.requireCloudinary();
-    try {
-      const result = await new Promise<UploadApiResponse>((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            resource_type: 'image',
-            folder: resourceFolder,
-            overwrite: false,
-            unique_filename: true,
-          },
-          (error, uploaded) => {
-            if (error || !uploaded) {
-              reject(error ?? new Error('Cloudinary returned no upload result.'));
-              return;
-            }
-
-            resolve(uploaded);
-          },
-        );
-        stream.end(file.buffer);
-      });
-
-      return {
-        secure_url: result.secure_url,
-        public_id: result.public_id,
-        format: result.format,
-        width: result.width,
-        height: result.height,
-        bytes: result.bytes,
-      };
-    } catch {
-      throw new ServiceUnavailableException('Product image upload could not be completed.');
-    }
+  async deleteCategoryImage(publicId: string) {
+    return this.deleteOwnedImage(publicId, `${CATEGORY_IMAGE_FOLDER}/users/`);
   }
 
   async uploadImages(files: Express.Multer.File[] | undefined, folder: string) {
@@ -97,6 +68,69 @@ export class UploadsService {
 
   isOwnedProductAsset(publicId: string) {
     return publicId.startsWith(`${PRODUCT_IMAGE_FOLDER}/users/`);
+  }
+
+  private async uploadImage(
+    file: Express.Multer.File | undefined,
+    resourceFolder: string,
+    resourceName: string,
+  ) {
+    if (!file) throw new BadRequestException(`${resourceName} image file is required.`);
+    if (!file.size) throw new BadRequestException(`The ${resourceName.toLowerCase()} image file is empty.`);
+    if (file.size > MAX_PRODUCT_IMAGE_BYTES) {
+      throw new PayloadTooLargeException(`The ${resourceName.toLowerCase()} image must be 5 MB or smaller.`);
+    }
+
+    const { fileTypeFromBuffer } = await import('file-type');
+    const detected = await fileTypeFromBuffer(file.buffer);
+    if (!detected || !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(detected.mime)) {
+      throw new BadRequestException(`Only JPEG, PNG, WebP, and AVIF ${resourceName.toLowerCase()} images are allowed.`);
+    }
+
+    const cloudinary = this.requireCloudinary();
+    try {
+      const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: 'image',
+            folder: resourceFolder,
+            overwrite: false,
+            unique_filename: true,
+          },
+          (error, uploaded) => {
+            if (error || !uploaded) {
+              reject(error ?? new Error('Cloudinary returned no upload result.'));
+              return;
+            }
+            resolve(uploaded);
+          },
+        );
+        stream.end(file.buffer);
+      });
+
+      return {
+        secure_url: result.secure_url,
+        public_id: result.public_id,
+        format: result.format,
+        width: result.width,
+        height: result.height,
+        bytes: result.bytes,
+      };
+    } catch {
+      throw new ServiceUnavailableException(`${resourceName} image upload could not be completed.`);
+    }
+  }
+
+  private async deleteOwnedImage(publicId: string, ownedFolder: string) {
+    if (!publicId.startsWith(ownedFolder)) return false;
+    const cloudinary = this.requireCloudinary();
+    try {
+      await cloudinary.uploader.destroy(publicId, { resource_type: 'image', invalidate: true });
+      return true;
+    } catch {
+      this.logger.error('Cloudinary resource image cleanup failed.');
+      return false;
+    }
   }
 
   private requireCloudinary() {
