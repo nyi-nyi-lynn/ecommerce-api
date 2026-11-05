@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { UploadsService } from '../modules/uploads/uploads.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
+import { hasPrismaErrorCode } from '../common/prisma/prisma-error.util.js';
 
 @Injectable()
 export class CategoriesService {
@@ -48,7 +49,7 @@ export class CategoriesService {
       });
     } catch (error: unknown) {
       if (uploaded) await this.uploads?.deleteCategoryImage(uploaded.public_id);
-      if (this.hasPrismaCode(error, 'P2002')) {
+      if (hasPrismaErrorCode(error, 'P2002')) {
         throw new ConflictException(
           'A category with this name or slug already exists.',
         );
@@ -134,13 +135,13 @@ export class CategoriesService {
       });
     } catch (error: unknown) {
       if (uploaded) await this.uploads?.deleteCategoryImage(uploaded.public_id);
-      if (this.hasPrismaCode(error, 'P2002')) {
+      if (hasPrismaErrorCode(error, 'P2002')) {
         throw new ConflictException(
           'A category with this name or slug already exists.',
         );
       }
 
-      if (this.hasPrismaCode(error, 'P2025')) {
+      if (hasPrismaErrorCode(error, 'P2025')) {
         throw new NotFoundException('Category not found.');
       }
 
@@ -186,13 +187,13 @@ export class CategoriesService {
 
       return deleted;
     } catch (error: unknown) {
-      if (this.hasPrismaCode(error, 'P2025')) {
+      if (hasPrismaErrorCode(error, 'P2025')) {
         throw new NotFoundException('Category not found.');
       }
 
       if (
-        this.hasPrismaCode(error, 'P2003') ||
-        this.hasPrismaCode(error, 'P2014')
+        hasPrismaErrorCode(error, 'P2003') ||
+        hasPrismaErrorCode(error, 'P2014')
       ) {
         throw new BadRequestException(
           'Cannot delete this category because products are linked to it.',
@@ -201,14 +202,5 @@ export class CategoriesService {
 
       throw error;
     }
-  }
-
-  private hasPrismaCode(error: unknown, code: string): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === code
-    );
   }
 }

@@ -1,11 +1,8 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { INestApplication } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { createTestHttpApp } from '../../test/helpers/create-test-http-app.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { GlobalExceptionFilter } from '../common/http/global-exception.filter.js';
-import { ResponseInterceptor } from '../common/http/response.interceptor.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import {
@@ -73,7 +70,7 @@ describe('Payments HTTP', () => {
         status: 'PAID',
       })),
     };
-    const moduleRef = await Test.createTestingModule({
+    app = await createTestHttpApp({
       imports: [
         JwtModule.register({ secret: 'isolated-payments-test-secret' }),
       ],
@@ -83,20 +80,8 @@ describe('Payments HTTP', () => {
         PermissionsGuard,
         { provide: PrismaService, useValue: prisma },
         { provide: PaymentsService, useValue: payments },
-        { provide: APP_FILTER, useClass: GlobalExceptionFilter },
-        { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
       ],
-    }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+    });
     jwt = app.get(JwtService);
   });
   afterEach(async () => app.close());

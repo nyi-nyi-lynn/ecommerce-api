@@ -6,11 +6,10 @@ import {
   ParseIntPipe,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
 import { AdjustStockDto } from './dto/adjust-stock.dto.js';
@@ -22,8 +21,6 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
-
-type AuthenticatedRequest = Request & { user: { sub: number } };
 
 @Controller('stock')
 @ApiTags('Stock')
@@ -43,9 +40,9 @@ export class StockController {
   initialize(
     @Param('productId', ParseIntPipe) productId: number,
     @Body() dto: InitializeStockDto,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
   ) {
-    return this.stock.initialize(productId, dto, request.user.sub);
+    return this.stock.initialize(productId, dto, actorId);
   }
 
   @Post('products/:productId/adjustments')
@@ -61,9 +58,9 @@ export class StockController {
   adjust(
     @Param('productId', ParseIntPipe) productId: number,
     @Body() dto: AdjustStockDto,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
   ) {
-    return this.stock.adjust(productId, dto, request.user.sub);
+    return this.stock.adjust(productId, dto, actorId);
   }
 
   @Get('products/:productId/movements')

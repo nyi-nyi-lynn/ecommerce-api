@@ -1,21 +1,16 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsInt,
-  IsIn,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
   Max,
-  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { PaymentMethod } from '../../generated/prisma/client.js';
+import { CheckoutOrderDto } from './checkout-order.dto.js';
 
 export const MAX_ORDER_ITEMS = 50;
 export const MAX_ORDER_PRODUCT_ID = 2_147_483_647;
@@ -49,16 +44,7 @@ export class CreateOrderItemDto {
   quantity: number;
 }
 
-export class CreateOrderDto {
-  @IsOptional()
-  @IsIn([PaymentMethod.COD, PaymentMethod.MANUAL])
-  @ApiPropertyOptional({
-    description: 'Payment method; COD is the default.',
-    enum: [PaymentMethod.COD, PaymentMethod.MANUAL],
-    example: PaymentMethod.COD,
-  })
-  paymentMethod?: PaymentMethod;
-
+export class CreateOrderDto extends CheckoutOrderDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayMaxSize(MAX_ORDER_ITEMS)
@@ -74,51 +60,4 @@ export class CreateOrderDto {
     example: [{ productId: 42, quantity: 2 }],
   })
   items: CreateOrderItemDto[];
-
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  @ApiProperty({
-    description: 'Shipping recipient name.',
-    type: String,
-    example: 'shippingName-example',
-    maxLength: 100,
-  })
-  shippingName: string;
-
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(30)
-  @ApiProperty({
-    description: 'Shipping contact phone.',
-    type: String,
-    example: 'shippingPhone-example',
-    maxLength: 30,
-  })
-  shippingPhone: string;
-
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(5000)
-  @ApiProperty({
-    description: 'Shipping address.',
-    type: String,
-    example: 'shippingAddress-example',
-    maxLength: 5000,
-  })
-  shippingAddress: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  @ApiPropertyOptional({
-    description: 'Optional note.',
-    type: String,
-    example: 'note-example',
-    maxLength: 500,
-  })
-  note?: string;
 }

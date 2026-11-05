@@ -6,12 +6,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PERMISSIONS_KEY } from './permissions.decorator.js';
+import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 
-type RequestWithUser = Request & {
-  user?: { sub?: unknown };
+type RbacRequest = Partial<AuthenticatedRequest> & {
   rbacPermissions?: Set<string>;
 };
 
@@ -29,7 +28,7 @@ export class PermissionsGuard implements CanActivate {
     );
     if (!required?.length) return true;
 
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
+    const request = context.switchToHttp().getRequest<RbacRequest>();
     const userId = request.user?.sub;
     if (!Number.isInteger(userId) || (userId as number) <= 0) {
       throw new UnauthorizedException('Authentication is required.');

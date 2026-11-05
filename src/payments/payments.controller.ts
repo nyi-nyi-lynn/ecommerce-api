@@ -6,11 +6,10 @@ import {
   ParseIntPipe,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { QueryPaymentsDto } from './dto/query-payments.dto.js';
@@ -22,8 +21,6 @@ import {
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
 import { PaymentsService } from './payments.service.js';
-
-type AuthenticatedRequest = Request & { user: { sub: number } };
 
 @Controller('payments')
 @UseGuards(JwtAuthGuard)
@@ -40,10 +37,10 @@ export class PaymentsController {
     errors: [400, 401, 404, 500],
   })
   getOrderPayments(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Param('orderId', ParseIntPipe) orderId: number,
   ) {
-    return this.payments.getCustomerOrderPayments(request.user.sub, orderId);
+    return this.payments.getCustomerOrderPayments(userId, orderId);
   }
 
   @Post('orders/:orderId/manual')
@@ -55,11 +52,11 @@ export class PaymentsController {
     errors: [400, 401, 404, 409, 500],
   })
   submitManual(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Param('orderId', ParseIntPipe) orderId: number,
     @Body() dto: SubmitManualPaymentDto,
   ) {
-    return this.payments.submitManualPayment(request.user.sub, orderId, dto);
+    return this.payments.submitManualPayment(userId, orderId, dto);
   }
 }
 
@@ -106,9 +103,9 @@ export class AdminPaymentsController {
   })
   approve(
     @Param('attemptId', ParseIntPipe) attemptId: number,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
   ) {
-    return this.payments.approveManualPayment(attemptId, request.user.sub);
+    return this.payments.approveManualPayment(attemptId, actorId);
   }
 
   @Post(':attemptId/reject')
@@ -121,10 +118,10 @@ export class AdminPaymentsController {
   })
   reject(
     @Param('attemptId', ParseIntPipe) attemptId: number,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
     @Body() dto: RejectPaymentDto,
   ) {
-    return this.payments.rejectManualPayment(attemptId, request.user.sub, dto);
+    return this.payments.rejectManualPayment(attemptId, actorId, dto);
   }
 
   @Post('orders/:orderId/collect-cod')
@@ -137,8 +134,8 @@ export class AdminPaymentsController {
   })
   collectCod(
     @Param('orderId', ParseIntPipe) orderId: number,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
   ) {
-    return this.payments.collectCod(orderId, request.user.sub);
+    return this.payments.collectCod(orderId, actorId);
   }
 }

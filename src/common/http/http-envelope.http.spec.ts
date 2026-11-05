@@ -11,16 +11,13 @@ import {
   Redirect,
   StreamableFile,
   UnauthorizedException,
-  ValidationPipe,
   Body,
 } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
-import { Test } from '@nestjs/testing';
 import { IsString, MinLength } from 'class-validator';
+import { MulterError } from 'multer';
 import request from 'supertest';
+import { createTestHttpApp } from '../../../test/helpers/create-test-http-app.js';
 import { Prisma } from '../../generated/prisma/client.js';
-import { GlobalExceptionFilter } from './global-exception.filter.js';
-import { ResponseInterceptor } from './response.interceptor.js';
 import { AppController } from '../../app.controller.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 
@@ -108,6 +105,16 @@ class ResponseTestController {
     });
   }
 
+  @Get('multer-size')
+  multerSize(): never {
+    throw new MulterError('LIMIT_FILE_SIZE', 'image');
+  }
+
+  @Get('multer-unexpected-field')
+  multerUnexpectedField(): never {
+    throw new MulterError('LIMIT_UNEXPECTED_FILE', 'file');
+  }
+
   @Get('file')
   file() {
     return new StreamableFile(Buffer.from('file contents'));
@@ -124,11 +131,9 @@ describe('Global HTTP response formatting', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({
+    app = await createTestHttpApp({
       controllers: [ResponseTestController, AppController],
       providers: [
-        { provide: APP_FILTER, useClass: GlobalExceptionFilter },
-        { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
         {
           provide: PrismaService,
           useValue: {
@@ -136,17 +141,7 @@ describe('Global HTTP response formatting', () => {
           },
         },
       ],
-    }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+    });
   });
 
   afterAll(async () => app.close());
@@ -262,6 +257,26 @@ describe('Global HTTP response formatting', () => {
       'A record with these values already exists.',
     );
     expect(unique.body.message).not.toContain('private database detail');
+  });
+
+  it('formats Multer upload errors with generic image messages and expected "image" field name', async () => {
+    const tooLarge = await request(app.getHttpServer())
+      .get('/api/response-test/multer-size')
+      .expect(413);
+    expect(tooLarge.body).toMatchObject({
+      success: false,
+      statusCode: 413,
+      message: 'The uploaded image must be 5 MB or smaller.',
+    });
+
+    const unexpectedField = await request(app.getHttpServer())
+      .get('/api/response-test/multer-unexpected-field')
+      .expect(400);
+    expect(unexpectedField.body).toMatchObject({
+      success: false,
+      statusCode: 400,
+      message: 'Use the predictable file field name: image.',
+    });
   });
 
   it('wraps the database health response without losing its fields', async () => {

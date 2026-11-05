@@ -1,11 +1,8 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { INestApplication } from '@nestjs/common';
 import { JwtModule, JwtService } from '@nestjs/jwt';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { createTestHttpApp } from '../../test/helpers/create-test-http-app.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { GlobalExceptionFilter } from '../common/http/global-exception.filter.js';
-import { ResponseInterceptor } from '../common/http/response.interceptor.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CartController } from './cart.controller.js';
 import { CartService } from './cart.service.js';
@@ -52,27 +49,15 @@ describe('Cart HTTP', () => {
         deleteMany: vi.fn(async () => ({ count: 0 })),
       },
     };
-    const module = await Test.createTestingModule({
+    app = await createTestHttpApp({
       imports: [JwtModule.register({ secret: 'isolated-cart-test-secret' })],
       controllers: [CartController],
       providers: [
         JwtAuthGuard,
         CartService,
         { provide: PrismaService, useValue: prisma },
-        { provide: APP_FILTER, useClass: GlobalExceptionFilter },
-        { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
       ],
-    }).compile();
-    app = module.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+    });
     jwt = app.get(JwtService);
   });
   afterEach(async () => app.close());

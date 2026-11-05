@@ -53,7 +53,7 @@ export class UploadsService {
   }
 
   async deleteCategoryImage(publicId: string) {
-    return this.deleteOwnedImage(publicId, `${CATEGORY_IMAGE_FOLDER}/users/`);
+    return this.deleteOwnedImage(publicId, CATEGORY_IMAGE_FOLDER, 'category');
   }
 
   async uploadImages(files: Express.Multer.File[] | undefined, folder: string) {
@@ -64,22 +64,44 @@ export class UploadsService {
   }
 
   async deleteProductImage(publicId: string) {
-    if (!this.isOwnedProductAsset(publicId)) return false;
-    const cloudinary = this.requireCloudinary();
-    try {
-      await cloudinary.uploader.destroy(publicId, {
-        resource_type: 'image',
-        invalidate: true,
-      });
-      return true;
-    } catch {
-      this.logger.error('Cloudinary product image cleanup failed.');
-      return false;
-    }
+    return this.deleteOwnedImage(publicId, PRODUCT_IMAGE_FOLDER, 'product');
   }
 
   isOwnedProductAsset(publicId: string) {
-    return publicId.startsWith(`${PRODUCT_IMAGE_FOLDER}/users/`);
+    return this.isOwnedAsset(publicId, PRODUCT_IMAGE_FOLDER);
+  }
+
+  isOwnedCategoryAsset(publicId: string) {
+    return this.isOwnedAsset(publicId, CATEGORY_IMAGE_FOLDER);
+  }
+
+  private isOwnedAsset(publicId: string, baseFolder: string): boolean {
+    if (typeof publicId !== 'string') return false;
+    const trimmed = publicId.trim();
+    if (!trimmed.startsWith(`${baseFolder}/`)) {
+      return false;
+    }
+    const remainder = trimmed.slice(baseFolder.length + 1);
+    if (
+      !remainder ||
+      remainder.startsWith('/') ||
+      remainder.endsWith('/') ||
+      remainder.includes('//')
+    ) {
+      return false;
+    }
+    const segments = remainder.split('/');
+    if (
+      segments.some(
+        (segment) => !segment || segment === '.' || segment === '..',
+      )
+    ) {
+      return false;
+    }
+    if (segments[0] === 'users') {
+      return segments.length >= 3;
+    }
+    return true;
   }
 
   private async uploadImage(
@@ -150,8 +172,12 @@ export class UploadsService {
     }
   }
 
-  private async deleteOwnedImage(publicId: string, ownedFolder: string) {
-    if (!publicId.startsWith(ownedFolder)) return false;
+  private async deleteOwnedImage(
+    publicId: string,
+    baseFolder: string,
+    resourceLabel = 'resource',
+  ) {
+    if (!this.isOwnedAsset(publicId, baseFolder)) return false;
     const cloudinary = this.requireCloudinary();
     try {
       await cloudinary.uploader.destroy(publicId, {
@@ -160,7 +186,7 @@ export class UploadsService {
       });
       return true;
     } catch {
-      this.logger.error('Cloudinary resource image cleanup failed.');
+      this.logger.error(`Cloudinary ${resourceLabel} image cleanup failed.`);
       return false;
     }
   }

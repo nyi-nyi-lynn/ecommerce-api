@@ -1,14 +1,8 @@
-import {
-  INestApplication,
-  NotFoundException,
-  ValidationPipe,
-} from '@nestjs/common';
-import { APP_FILTER, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
+import { INestApplication, NotFoundException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtModule, JwtService } from '@nestjs/jwt';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { GlobalExceptionFilter } from '../common/http/global-exception.filter.js';
-import { ResponseInterceptor } from '../common/http/response.interceptor.js';
+import { createTestHttpApp } from '../../test/helpers/create-test-http-app.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -61,7 +55,7 @@ describe('Stock HTTP', () => {
         },
       })),
     };
-    const moduleRef = await Test.createTestingModule({
+    app = await createTestHttpApp({
       imports: [JwtModule.register({ secret: 'isolated-stock-test-secret' })],
       controllers: [StockController],
       providers: [
@@ -70,20 +64,8 @@ describe('Stock HTTP', () => {
         Reflector,
         { provide: PrismaService, useValue: prisma },
         { provide: StockService, useValue: stock },
-        { provide: APP_FILTER, useClass: GlobalExceptionFilter },
-        { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
       ],
-    }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    await app.init();
+    });
     jwt = app.get(JwtService);
   });
 

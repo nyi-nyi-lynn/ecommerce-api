@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -7,44 +7,21 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
   Min,
 } from 'class-validator';
+import {
+  MAX_PAGE,
+  PaginationQueryDto,
+} from '../../common/pagination/pagination-query.dto.js';
+import { TransformBoolean } from '../../common/transformers/transform-boolean.decorator.js';
 
 const sortableFields = ['name', 'price', 'createdAt', 'updatedAt'] as const;
 
 // Caps the largest supported offset at 999,900 rows when limit is 100.
-export const MAX_PRODUCT_PAGE = 10_000;
+export const MAX_PRODUCT_PAGE = MAX_PAGE;
 
-export class QueryProductsDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_PRODUCT_PAGE)
-  @ApiPropertyOptional({
-    description: 'Page number.',
-    type: Number,
-    example: 1,
-    default: 1,
-    minimum: 1,
-    maximum: MAX_PRODUCT_PAGE,
-  })
-  page?: number = 1;
-  @ApiPropertyOptional({
-    description: 'Results per page; defaults to 20, maximum 100.',
-    example: 20,
-    default: 20,
-    minimum: 1,
-    maximum: 100,
-  })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
+export class QueryProductsDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     description: 'Allowlisted sort field.',
     enum: sortableFields,
@@ -102,7 +79,7 @@ export class QueryProductsDto {
   search?: string;
   // Public listing remains forced to active products; false cannot reveal inactive rows.
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
+  @TransformBoolean()
   @IsBoolean()
   @ApiPropertyOptional({
     description:

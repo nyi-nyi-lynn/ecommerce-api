@@ -15,5 +15,8 @@ interceptor and exception filter. Permission-protected operations document the
 permission code and explain that authorization is resolved from current
 database permissions; JWT role claims are not the source of truth.
 
-Product image fields accept URLs only. File upload, payment gateway processing,
-and refund endpoints are not implemented.
+Product and Category write endpoints (`POST` and `PATCH`) accept both
+`multipart/form-data` (using the `image` binary file field, validated and
+uploaded via the shared Cloudinary `UploadsService`) and `application/json`.
+Product endpoints also support an optional `imageUrl` fallback when no file is
+uploaded. Payment gateway processing and refund endpoints are not implemented.

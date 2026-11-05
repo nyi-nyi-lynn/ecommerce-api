@@ -10,6 +10,7 @@
   },
   "include": [
     "seed.ts",
+    "../src/common/prisma/prisma-error.util.ts",
     "../src/generated/prisma/**/*.ts"
   ],
   "exclude": ["../node_modules", "../dist", "../dist-seed"]

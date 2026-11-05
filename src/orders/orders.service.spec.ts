@@ -7,9 +7,13 @@ import {
 import {
   OrderStatus,
   PaymentMethod,
+  PaymentStatus,
   Prisma,
 } from '../generated/prisma/client.js';
-import { OrdersService } from './orders.service.js';
+import {
+  ORDER_CANCELLED_PAYMENT_EVENT,
+  OrdersService,
+} from './orders.service.js';
 
 describe('OrdersService', () => {
   let service: OrdersService;
@@ -19,6 +23,21 @@ describe('OrdersService', () => {
   let products: any[];
   let orders: any[];
   let movements: any[];
+  let paymentAttempts: Array<{
+    id: number;
+    orderId: number;
+    status: PaymentStatus;
+    createdAt: Date;
+  }>;
+  let paymentEvents: Array<{
+    id: number;
+    paymentAttemptId: number;
+    eventType: string;
+    previousStatus: PaymentStatus | null;
+    newStatus: PaymentStatus;
+    actorId: number | null;
+    reason: string | null;
+  }>;
   let cartItems: Array<{ productId: number; quantity: number }>;
   let nextId: number;
   let failItemCreate: boolean;
@@ -36,12 +55,29 @@ describe('OrdersService', () => {
     ];
     orders = [];
     movements = [];
+    paymentAttempts = [];
+    paymentEvents = [];
     cartItems = [];
     hasCart = true;
     nextId = 1;
     failItemCreate = false;
     tx = {
-      $queryRaw: vi.fn(async () => (hasCart ? [{ id: 90 }] : [])),
+      $queryRaw: vi.fn(
+        async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          if (sql.includes('"Order"')) {
+            const orderId = values[0] as number;
+            const userId = values[1] as number | undefined;
+            const matched = orders.find(
+              (o) =>
+                o.id === orderId &&
+                (userId === undefined || o.userId === userId),
+            );
+            return matched ? [{ id: matched.id }] : [];
+          }
+          return hasCart ? [{ id: 90 }] : [];
+        },
+      ),
       cartItem: {
         findMany: vi.fn(async ({ where }) =>
           cartItems
@@ -94,10 +130,12 @@ describe('OrdersService', () => {
             (o) =>
               o.id === where.id &&
               (where.userId === undefined || o.userId === where.userId) &&
-              o.status === where.status,
+              o.status === where.status &&
+              (where.paymentStatus?.not === undefined ||
+                o.paymentStatus !== where.paymentStatus.not),
           );
           if (!order) return { count: 0 };
-          order.status = data.status;
+          Object.assign(order, data);
           return { count: 1 };
         }),
         findMany: vi.fn(async ({ where }) =>
@@ -108,6 +146,34 @@ describe('OrdersService', () => {
             orders.filter((o) => o.userId === where.userId).length,
         ),
       },
+      paymentAttempt: {
+        findMany: vi.fn(async ({ where }) =>
+          paymentAttempts
+            .filter((attempt) => attempt.orderId === where.orderId)
+            .map((attempt) => ({ ...attempt })),
+        ),
+        updateMany: vi.fn(async ({ where, data }) => {
+          const attempt = paymentAttempts.find(
+            (a) =>
+              a.id === where.id &&
+              (where.orderId === undefined || a.orderId === where.orderId) &&
+              (where.status === undefined || a.status === where.status),
+          );
+          if (!attempt) return { count: 0 };
+          Object.assign(attempt, data);
+          return { count: 1 };
+        }),
+      },
+      paymentEvent: {
+        create: vi.fn(async ({ data }) => {
+          const event = {
+            id: paymentEvents.length + 1,
+            ...data,
+          };
+          paymentEvents.push(event);
+          return event;
+        }),
+      },
     };
     prisma = {
       $transaction: vi.fn(async (callback) => {
@@ -116,12 +182,16 @@ describe('OrdersService', () => {
           items: [...order.items],
         }));
         const movementsBefore = [...movements];
+        const attemptsBefore = paymentAttempts.map((a) => ({ ...a }));
+        const eventsBefore = paymentEvents.map((e) => ({ ...e }));
         const cartItemsBefore = cartItems.map((item) => ({ ...item }));
         try {
           return await callback(tx);
         } catch (error) {
           orders = ordersBefore;
           movements = movementsBefore;
+          paymentAttempts = attemptsBefore;
+          paymentEvents = eventsBefore;
           cartItems = cartItemsBefore;
           throw error;
         }
@@ -476,11 +546,15 @@ describe('OrdersService', () => {
     expect(await service.findMine(7, 1)).toMatchObject({ userId: 7 });
   });
 
-  it('allows only lifecycle transitions and restores stock once on owner cancellation', async () => {
+  it('1 & 7. cancels an order with no payment attempt, locks the Order row, and restores stock once', async () => {
     await service.create(7, dto([{ productId: 1, quantity: 3 }]) as any);
     const cancelled = await service.cancelMine(7, 1);
     expect(cancelled.status).toBe(OrderStatus.CANCELLED);
+    expect(cancelled.paymentStatus).toBe(PaymentStatus.CANCELLED);
+    expect(tx.$queryRaw).toHaveBeenCalled();
     expect(stock.restoreForOrder).toHaveBeenCalledOnce();
+    expect(tx.paymentEvent.create).not.toHaveBeenCalled();
+
     await expect(service.cancelMine(7, 1)).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -488,6 +562,110 @@ describe('OrdersService', () => {
       service.updateStatus(1, { status: OrderStatus.DELIVERED } as any, 2),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(stock.restoreForOrder).toHaveBeenCalledOnce();
+  });
+
+  it('2 & 5. cancels an order with a PENDING payment attempt, transitions it to CANCELLED, and creates an immutable PaymentEvent', async () => {
+    await service.create(7, {
+      ...dto([{ productId: 1, quantity: 2 }]),
+      paymentMethod: PaymentMethod.MANUAL,
+    } as any);
+    paymentAttempts.push({
+      id: 50,
+      orderId: 1,
+      status: PaymentStatus.PENDING,
+      createdAt: new Date(),
+    });
+
+    const cancelled = await service.cancelMine(7, 1);
+    expect(cancelled.status).toBe(OrderStatus.CANCELLED);
+    expect(cancelled.paymentStatus).toBe(PaymentStatus.CANCELLED);
+    expect(paymentAttempts[0]?.status).toBe(PaymentStatus.CANCELLED);
+    expect(paymentEvents).toEqual([
+      expect.objectContaining({
+        paymentAttemptId: 50,
+        eventType: ORDER_CANCELLED_PAYMENT_EVENT,
+        previousStatus: PaymentStatus.PENDING,
+        newStatus: PaymentStatus.CANCELLED,
+        actorId: 7,
+        reason: 'Order cancelled',
+      }),
+    ]);
+    expect(stock.restoreForOrder).toHaveBeenCalledWith(tx, 1, 2, 7, 1);
+  });
+
+  it('3 & 5. cancels an order with an UNDER_REVIEW payment attempt, transitions it to CANCELLED, and records the actor in PaymentEvent', async () => {
+    await service.create(7, {
+      ...dto([{ productId: 2, quantity: 1 }]),
+      paymentMethod: PaymentMethod.MANUAL,
+    } as any);
+    paymentAttempts.push({
+      id: 51,
+      orderId: 1,
+      status: PaymentStatus.UNDER_REVIEW,
+      createdAt: new Date(),
+    });
+
+    const cancelled = await service.updateStatus(
+      1,
+      { status: OrderStatus.CANCELLED } as any,
+      99,
+    );
+    expect(cancelled.status).toBe(OrderStatus.CANCELLED);
+    expect(cancelled.paymentStatus).toBe(PaymentStatus.CANCELLED);
+    expect(paymentAttempts[0]?.status).toBe(PaymentStatus.CANCELLED);
+    expect(paymentEvents).toEqual([
+      expect.objectContaining({
+        paymentAttemptId: 51,
+        eventType: ORDER_CANCELLED_PAYMENT_EVENT,
+        previousStatus: PaymentStatus.UNDER_REVIEW,
+        newStatus: PaymentStatus.CANCELLED,
+        actorId: 99,
+        reason: 'Order cancelled',
+      }),
+    ]);
+    expect(stock.restoreForOrder).toHaveBeenCalledWith(tx, 2, 1, 99, 1);
+  });
+
+  it('4. preserves terminal payment states (REJECTED, CANCELLED, PAID) without mutating history', async () => {
+    await service.create(7, {
+      ...dto([{ productId: 1, quantity: 1 }]),
+      paymentMethod: PaymentMethod.MANUAL,
+    } as any);
+    paymentAttempts.push(
+      {
+        id: 60,
+        orderId: 1,
+        status: PaymentStatus.REJECTED,
+        createdAt: new Date(),
+      },
+      {
+        id: 61,
+        orderId: 1,
+        status: PaymentStatus.CANCELLED,
+        createdAt: new Date(),
+      },
+      {
+        id: 62,
+        orderId: 1,
+        status: PaymentStatus.UNDER_REVIEW,
+        createdAt: new Date(),
+      },
+    );
+
+    await service.cancelMine(7, 1);
+
+    expect(paymentAttempts.find((a) => a.id === 60)?.status).toBe(
+      PaymentStatus.REJECTED,
+    );
+    expect(paymentAttempts.find((a) => a.id === 61)?.status).toBe(
+      PaymentStatus.CANCELLED,
+    );
+    expect(paymentAttempts.find((a) => a.id === 62)?.status).toBe(
+      PaymentStatus.CANCELLED,
+    );
+    // Only the active UNDER_REVIEW attempt (62) receives a transition event
+    expect(paymentEvents).toHaveLength(1);
+    expect(paymentEvents[0]?.paymentAttemptId).toBe(62);
   });
 
   it('restores for admin cancellation through processing and rejects cancellation after shipment', async () => {
@@ -519,11 +697,30 @@ describe('OrdersService', () => {
     await expect(
       service.updateStatus(1, { status: OrderStatus.CANCELLED } as any, 2),
     ).rejects.toBeInstanceOf(ConflictException);
+
+    // Also blocks cancellation if a PaymentAttempt has status PAID
+    orders[0].paymentStatus = PaymentStatus.PENDING;
+    paymentAttempts.push({
+      id: 70,
+      orderId: 1,
+      status: PaymentStatus.PAID,
+      createdAt: new Date(),
+    });
+    await expect(service.cancelMine(7, 1)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
     expect(stock.restoreForOrder).not.toHaveBeenCalled();
   });
 
-  it('conditionally excludes paid orders when admin cancellation races payment approval', async () => {
+  it('6. ensures concurrent cancellation safety via ReadCommitted locking and conditional updates', async () => {
     await service.create(7, dto([{ productId: 1, quantity: 1 }]) as any);
+    paymentAttempts.push({
+      id: 80,
+      orderId: 1,
+      status: PaymentStatus.UNDER_REVIEW,
+      createdAt: new Date(),
+    });
+
     tx.order.updateMany.mockImplementationOnce(
       async ({ where }: { where: Record<string, any> }) => {
         expect(where).toMatchObject({ paymentStatus: { not: 'PAID' } });
@@ -534,5 +731,15 @@ describe('OrdersService', () => {
       service.updateStatus(1, { status: OrderStatus.CANCELLED } as any, 2),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(stock.restoreForOrder).not.toHaveBeenCalled();
+    expect(paymentEvents).toHaveLength(0);
+
+    // If the payment attempt status changes concurrently during cancellation, abort and roll back
+    tx.paymentAttempt.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(service.cancelMine(7, 1)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(orders[0]?.status).toBe(OrderStatus.PENDING);
+    expect(stock.restoreForOrder).not.toHaveBeenCalled();
+    expect(paymentEvents).toHaveLength(0);
   });
 });

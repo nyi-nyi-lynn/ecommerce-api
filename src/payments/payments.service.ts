@@ -12,6 +12,10 @@ import {
   PaymentStatus,
   Prisma,
 } from '../generated/prisma/client.js';
+import {
+  buildPaginatedResponse,
+  resolvePaginationParams,
+} from '../common/pagination/pagination.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { RejectPaymentDto } from './dto/reject-payment.dto.js';
@@ -179,15 +183,14 @@ export class PaymentsService {
   }
 
   async listAttempts(query: QueryPaymentsDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = resolvePaginationParams(query);
     const where: Prisma.PaymentAttemptWhereInput = query.status
       ? { status: query.status }
       : {};
     const [items, total] = await Promise.all([
       this.prisma.paymentAttempt.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: {
@@ -197,10 +200,7 @@ export class PaymentsService {
       }),
       this.prisma.paymentAttempt.count({ where }),
     ]);
-    return {
-      items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
   async getAttempt(attemptId: number) {

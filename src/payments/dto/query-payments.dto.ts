@@ -2,8 +2,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { PaymentStatus } from '../../generated/prisma/client.js';
+import { PaginationQueryDto } from '../../common/pagination/pagination-query.dto.js';
 
-export class QueryPaymentsDto {
+export class QueryPaymentsDto extends PaginationQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -18,23 +19,7 @@ export class QueryPaymentsDto {
     minimum: 1,
     maximum: 100_000,
   })
-  page = 1;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  @ApiPropertyOptional({
-    type: 'integer',
-    format: 'int32',
-    description: 'Results per page; default 20, maximum 100.',
-    example: 20,
-    default: 20,
-    minimum: 1,
-    maximum: 100,
-  })
-  limit = 20;
+  override page?: number = 1;
 
   @IsOptional()
   @IsEnum(PaymentStatus)

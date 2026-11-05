@@ -8,6 +8,7 @@ import {
   PrismaClient,
   StockMovementType,
 } from '../src/generated/prisma/client.js';
+import { hasPrismaErrorCode } from '../src/common/prisma/prisma-error.util.js';
 
 const BCRYPT_COST = 12;
 const DEVELOPMENT_PASSWORD_MIN_LENGTH = 8;
@@ -357,12 +358,7 @@ const cartDefinitions = [
 ] as const;
 
 function isUniqueConstraintError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'P2002'
-  );
+  return hasPrismaErrorCode(error, 'P2002');
 }
 
 function validatePassword(password: string): void {

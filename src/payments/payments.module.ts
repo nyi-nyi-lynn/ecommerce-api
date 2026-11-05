@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
-import { PrismaModule } from '../prisma/prisma.module.js';
 import { RbacModule } from '../rbac/rbac.module.js';
 import {
   AdminPaymentsController,
@@ -9,7 +8,7 @@ import {
 import { PaymentsService } from './payments.service.js';
 
 @Module({
-  imports: [PrismaModule, AuthModule, RbacModule],
+  imports: [AuthModule, RbacModule],
   controllers: [PaymentsController, AdminPaymentsController],
   providers: [PaymentsService],
 })

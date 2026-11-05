@@ -1,5 +1,4 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsNotEmpty,
@@ -7,6 +6,7 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { TransformBoolean } from '../../common/transformers/transform-boolean.decorator.js';
 
 export class UpdateCategoryDto {
   @IsOptional()
@@ -42,7 +42,7 @@ export class UpdateCategoryDto {
 
   @IsOptional()
   @IsBoolean()
-  @Transform(({ value }) => value === true || value === 'true')
+  @TransformBoolean()
   @ApiPropertyOptional({
     description: 'Whether the resource is active.',
     type: Boolean,

@@ -8,6 +8,11 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AdjustStockDto } from './dto/adjust-stock.dto.js';
 import { InitializeStockDto } from './dto/initialize-stock.dto.js';
 import { QueryStockMovementsDto } from './dto/query-stock-movements.dto.js';
+import { hasPrismaErrorCode } from '../common/prisma/prisma-error.util.js';
+import {
+  buildPaginatedResponse,
+  resolvePaginationParams,
+} from '../common/pagination/pagination.util.js';
 
 @Injectable()
 export class StockService {
@@ -46,12 +51,12 @@ export class StockService {
         return stock;
       });
     } catch (error) {
-      if (this.hasCode(error, 'P2002')) {
+      if (hasPrismaErrorCode(error, 'P2002')) {
         throw new ConflictException(
           'Stock has already been initialized for this product.',
         );
       }
-      if (this.hasCode(error, 'P2003')) {
+      if (hasPrismaErrorCode(error, 'P2003')) {
         throw new NotFoundException('Product not found.');
       }
       throw error;
@@ -232,12 +237,11 @@ export class StockService {
       throw new NotFoundException('Product not found.');
     }
     const where: Prisma.StockMovementWhereInput = { productId };
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = resolvePaginationParams(query);
     const [items, total] = await Promise.all([
       this.prisma.stockMovement.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: {
@@ -255,18 +259,6 @@ export class StockService {
       }),
       this.prisma.stockMovement.count({ where }),
     ]);
-    return {
-      items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
-  }
-
-  private hasCode(error: unknown, code: string) {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === code
-    );
+    return buildPaginatedResponse(items, total, page, limit);
   }
 }

@@ -7,11 +7,10 @@ import {
   Patch,
   Post,
   Put,
-  Req,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PermissionsGuard } from './permissions.guard.js';
 import { RequirePermissions } from './permissions.decorator.js';
 import { RbacService } from './rbac.service.js';
@@ -24,8 +23,6 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
-
-type AuthenticatedRequest = Request & { user: { sub: number } };
 
 @Controller('rbac')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -96,8 +93,8 @@ export class RbacController {
   assignUserRole(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AssignUserRoleDto,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
   ) {
-    return this.rbacService.assignUserRole(id, dto.roleId, request.user.sub);
+    return this.rbacService.assignUserRole(id, dto.roleId, actorId);
   }
 }

@@ -7,7 +7,6 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -15,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import multer from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
@@ -26,10 +26,7 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
-import type { Request } from 'express';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
-
-type RequestWithUser = Request & { user?: { sub?: number } };
 
 @Controller('products')
 @ApiTags('Products')
@@ -70,9 +67,9 @@ export class ProductsController {
   create(
     @Body() dto: CreateProductDto,
     @UploadedFile() image: Express.Multer.File | undefined,
-    @Req() request: RequestWithUser,
+    @CurrentUser('sub') userId: number | undefined,
   ) {
-    return this.products.create(dto, image, request.user?.sub);
+    return this.products.create(dto, image, userId);
   }
 
   @Patch(':id')
@@ -110,9 +107,9 @@ export class ProductsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateProductDto,
     @UploadedFile() image: Express.Multer.File | undefined,
-    @Req() request: RequestWithUser,
+    @CurrentUser('sub') userId: number | undefined,
   ) {
-    return this.products.update(id, dto, image, request.user?.sub);
+    return this.products.update(id, dto, image, userId);
   }
 
   @Get()

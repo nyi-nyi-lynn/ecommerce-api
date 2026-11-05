@@ -114,13 +114,88 @@ describe('UploadsService', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
-  it('only destroys assets in the designated product folder', async () => {
-    await expect(
-      service.deleteProductImage('other/folder/image'),
-    ).resolves.toBe(false);
+  it('1. deletes user-scoped product images', async () => {
     await expect(
       service.deleteProductImage('ecommerce/products/users/7/image'),
     ).resolves.toBe(true);
+    expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
+      'ecommerce/products/users/7/image',
+      { resource_type: 'image', invalidate: true },
+    );
+  });
+
+  it('2. deletes user-scoped category images', async () => {
+    await expect(
+      service.deleteCategoryImage('ecommerce/categories/users/7/image'),
+    ).resolves.toBe(true);
+    expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
+      'ecommerce/categories/users/7/image',
+      { resource_type: 'image', invalidate: true },
+    );
+  });
+
+  it('3. supports valid unscoped product and category image deletion when uploaded without userId', async () => {
+    await expect(
+      service.deleteProductImage('ecommerce/products/unscoped-asset'),
+    ).resolves.toBe(true);
+    await expect(
+      service.deleteCategoryImage('ecommerce/categories/unscoped-asset'),
+    ).resolves.toBe(true);
+    expect(cloudinary.uploader.destroy).toHaveBeenCalledTimes(2);
+  });
+
+  it('4. rejects cross-resource folder deletion between products and categories', async () => {
+    await expect(
+      service.deleteProductImage('ecommerce/categories/users/7/image'),
+    ).resolves.toBe(false);
+    await expect(
+      service.deleteProductImage('ecommerce/categories/unscoped'),
+    ).resolves.toBe(false);
+    await expect(
+      service.deleteCategoryImage('ecommerce/products/users/7/image'),
+    ).resolves.toBe(false);
+    await expect(
+      service.deleteCategoryImage('ecommerce/products/unscoped'),
+    ).resolves.toBe(false);
+    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+  });
+
+  it('5. rejects invalid, empty, external, or path-traversal public IDs', async () => {
+    for (const invalidPublicId of [
+      '',
+      '   ',
+      'other/folder/image',
+      'ecommerce/products/',
+      'ecommerce/categories/',
+      'ecommerce/products/users/7/',
+      'ecommerce/products/users//image',
+      'ecommerce/products/../categories/image',
+      'ecommerce/categories/users/7/../../products/image',
+    ]) {
+      await expect(
+        service.deleteProductImage(invalidPublicId),
+      ).resolves.toBe(false);
+      await expect(
+        service.deleteCategoryImage(invalidPublicId),
+      ).resolves.toBe(false);
+    }
+    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+  });
+
+  it('6. handles Cloudinary deletion failures safely by returning false', async () => {
+    cloudinary.uploader.destroy.mockRejectedValueOnce(
+      new Error('Cloudinary network error'),
+    );
+    await expect(
+      service.deleteProductImage('ecommerce/products/users/7/image'),
+    ).resolves.toBe(false);
+
+    cloudinary.uploader.destroy.mockRejectedValueOnce(
+      new Error('Cloudinary network error'),
+    );
+    await expect(
+      service.deleteCategoryImage('ecommerce/categories/users/7/image'),
+    ).resolves.toBe(false);
   });
 
   it('uploads category images into the category folder', async () => {
@@ -148,14 +223,5 @@ describe('UploadsService', () => {
       expect.objectContaining({ folder: 'ecommerce/categories/users/7' }),
       expect.any(Function),
     );
-  });
-
-  it('only destroys assets in the designated category folder', async () => {
-    await expect(
-      service.deleteCategoryImage('other/folder/image'),
-    ).resolves.toBe(false);
-    await expect(
-      service.deleteCategoryImage('ecommerce/categories/users/7/image'),
-    ).resolves.toBe(true);
   });
 });

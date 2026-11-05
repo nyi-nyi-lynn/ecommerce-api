@@ -12,6 +12,10 @@ import {
   PaymentStatus,
   Prisma,
 } from '../generated/prisma/client.js';
+import {
+  buildPaginatedResponse,
+  resolvePaginationParams,
+} from '../common/pagination/pagination.util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StockService } from '../stock/stock.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -21,6 +25,13 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 
 const MAX_INT = 2_147_483_647;
 const MAX_ORDER_TOTAL = new Prisma.Decimal('9999999999.99');
+
+export const ORDER_CANCELLED_PAYMENT_EVENT = 'ORDER_CANCELLED';
+
+const CANCELLABLE_PAYMENT_STATUSES: ReadonlySet<PaymentStatus> = new Set([
+  PaymentStatus.PENDING,
+  PaymentStatus.UNDER_REVIEW,
+]);
 
 const orderDetailSelect = {
   id: true,
@@ -59,7 +70,7 @@ const allowedTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
 
 type OrderLine = { productId: number; quantity: number };
 type OrderShipping = Pick<
-  CreateOrderDto | CheckoutOrderDto,
+  CheckoutOrderDto,
   | 'shippingName'
   | 'shippingPhone'
   | 'shippingAddress'
@@ -163,7 +174,6 @@ export class OrdersService {
     requested: OrderLine[],
     dto: OrderShipping,
   ) {
-    this.validateOrderLines(requested);
     const productIds = requested.map((item) => item.productId);
     // Pricing policy: snapshot the active catalogue name and price read inside
     // this transaction; the persisted OrderItem snapshot remains authoritative.
@@ -243,23 +253,19 @@ export class OrdersService {
   }
 
   async listMine(userId: number, query: QueryOrdersDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = resolvePaginationParams(query);
     const where: Prisma.OrderWhereInput = { userId };
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: orderDetailSelect,
       }),
       this.prisma.order.count({ where }),
     ]);
-    return {
-      items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
   async findMine(userId: number, orderId: number) {
@@ -272,25 +278,21 @@ export class OrdersService {
   }
 
   async listAll(query: QueryAdminOrdersDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = resolvePaginationParams(query);
     const where: Prisma.OrderWhereInput = {
       ...(query.status !== undefined && { status: query.status }),
     };
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: orderDetailSelect,
       }),
       this.prisma.order.count({ where }),
     ]);
-    return {
-      items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
   async findById(orderId: number) {
@@ -303,37 +305,41 @@ export class OrdersService {
   }
 
   async cancelMine(userId: number, orderId: number) {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findFirst({
-        where: { id: orderId, userId },
-        select: {
-          id: true,
-          status: true,
-          paymentStatus: true,
-          items: { select: { productId: true, quantity: true } },
-        },
-      });
-      if (!order) throw new NotFoundException('Order not found.');
-      if (order.status !== OrderStatus.PENDING) {
-        throw new ConflictException(
-          'Customers may cancel only pending orders.',
-        );
-      }
-      if (order.paymentStatus === PaymentStatus.PAID) {
-        throw new ConflictException(
-          'Paid orders cannot be cancelled without refund support.',
-        );
-      }
-      await this.cancelAndRestore(tx, order, userId, {
-        userId,
-        status: OrderStatus.PENDING,
-        paymentStatus: { not: PaymentStatus.PAID },
-      });
-      return tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        select: orderDetailSelect,
-      });
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockOrder(tx, orderId, userId);
+        const order = await tx.order.findFirst({
+          where: { id: orderId, userId },
+          select: {
+            id: true,
+            status: true,
+            paymentStatus: true,
+            items: { select: { productId: true, quantity: true } },
+          },
+        });
+        if (!order) throw new NotFoundException('Order not found.');
+        if (order.status !== OrderStatus.PENDING) {
+          throw new ConflictException(
+            'Customers may cancel only pending orders.',
+          );
+        }
+        if (order.paymentStatus === PaymentStatus.PAID) {
+          throw new ConflictException(
+            'Paid orders cannot be cancelled without refund support.',
+          );
+        }
+        await this.cancelAndRestore(tx, order, userId, {
+          userId,
+          status: OrderStatus.PENDING,
+          paymentStatus: { not: PaymentStatus.PAID },
+        });
+        return tx.order.findUniqueOrThrow({
+          where: { id: orderId },
+          select: orderDetailSelect,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
   }
 
   async updateStatus(
@@ -341,54 +347,76 @@ export class OrdersService {
     dto: UpdateOrderStatusDto,
     actorId: number,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        select: {
-          id: true,
-          status: true,
-          paymentStatus: true,
-          items: { select: { productId: true, quantity: true } },
-        },
-      });
-      if (!order) throw new NotFoundException('Order not found.');
-      if (!allowedTransitions[order.status].includes(dto.status)) {
-        throw new ConflictException(
-          `Cannot transition an order from ${order.status} to ${dto.status}.`,
-        );
-      }
-
-      if (
-        dto.status === OrderStatus.CANCELLED &&
-        order.paymentStatus === PaymentStatus.PAID
-      ) {
-        throw new ConflictException(
-          'Paid orders cannot be cancelled without refund support.',
-        );
-      }
-
-      if (dto.status === OrderStatus.CANCELLED) {
-        await this.cancelAndRestore(tx, order, actorId, {
-          status: order.status,
-          paymentStatus: { not: PaymentStatus.PAID },
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockOrder(tx, orderId);
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          select: {
+            id: true,
+            status: true,
+            paymentStatus: true,
+            items: { select: { productId: true, quantity: true } },
+          },
         });
-      } else {
-        const updated = await tx.order.updateMany({
-          where: { id: orderId, status: order.status },
-          data: { status: dto.status },
-        });
-        if (updated.count !== 1) {
+        if (!order) throw new NotFoundException('Order not found.');
+        if (!allowedTransitions[order.status].includes(dto.status)) {
           throw new ConflictException(
-            'The order status changed concurrently. Reload and retry.',
+            `Cannot transition an order from ${order.status} to ${dto.status}.`,
           );
         }
-      }
 
-      return tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        select: orderDetailSelect,
-      });
-    });
+        if (
+          dto.status === OrderStatus.CANCELLED &&
+          order.paymentStatus === PaymentStatus.PAID
+        ) {
+          throw new ConflictException(
+            'Paid orders cannot be cancelled without refund support.',
+          );
+        }
+
+        if (dto.status === OrderStatus.CANCELLED) {
+          await this.cancelAndRestore(tx, order, actorId, {
+            status: order.status,
+            paymentStatus: { not: PaymentStatus.PAID },
+          });
+        } else {
+          const updated = await tx.order.updateMany({
+            where: { id: orderId, status: order.status },
+            data: { status: dto.status },
+          });
+          if (updated.count !== 1) {
+            throw new ConflictException(
+              'The order status changed concurrently. Reload and retry.',
+            );
+          }
+        }
+
+        return tx.order.findUniqueOrThrow({
+          where: { id: orderId },
+          select: orderDetailSelect,
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+  }
+
+  private async lockOrder(
+    tx: Prisma.TransactionClient,
+    orderId: number,
+    userId?: number,
+  ) {
+    // READ COMMITTED gives each query after FOR UPDATE a fresh snapshot, so a
+    // waiter can observe the payment or order state committed by a concurrent transaction.
+    const rows =
+      userId === undefined
+        ? await tx.$queryRaw<
+            Array<{ id: number }>
+          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+        : await tx.$queryRaw<
+            Array<{ id: number }>
+          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId} AND "userId" = ${userId} FOR UPDATE`;
+    if (!rows[0]) throw new NotFoundException('Order not found.');
   }
 
   private async cancelAndRestore(
@@ -396,6 +424,7 @@ export class OrdersService {
     order: {
       id: number;
       status: OrderStatus;
+      paymentStatus: PaymentStatus;
       items: Array<{ productId: number; quantity: number }>;
     },
     actorId: number,
@@ -405,15 +434,68 @@ export class OrdersService {
       paymentStatus?: { not: PaymentStatus };
     },
   ) {
+    const attempts = await tx.paymentAttempt.findMany({
+      where: { orderId: order.id },
+      select: { id: true, status: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+
+    if (attempts.some((attempt) => attempt.status === PaymentStatus.PAID)) {
+      throw new ConflictException(
+        'Paid orders cannot be cancelled without refund support.',
+      );
+    }
+
+    const nextOrderPaymentStatus = CANCELLABLE_PAYMENT_STATUSES.has(
+      order.paymentStatus,
+    )
+      ? PaymentStatus.CANCELLED
+      : order.paymentStatus;
+
     const updated = await tx.order.updateMany({
       where: { id: order.id, ...ownerFilter },
-      data: { status: OrderStatus.CANCELLED },
+      data: {
+        status: OrderStatus.CANCELLED,
+        paymentStatus: nextOrderPaymentStatus,
+      },
     });
     if (updated.count !== 1) {
       throw new ConflictException(
         'The order status changed concurrently. Reload and retry.',
       );
     }
+
+    for (const attempt of attempts) {
+      if (!CANCELLABLE_PAYMENT_STATUSES.has(attempt.status)) {
+        continue;
+      }
+      const updatedAttempt = await tx.paymentAttempt.updateMany({
+        where: {
+          id: attempt.id,
+          orderId: order.id,
+          status: attempt.status,
+        },
+        data: {
+          status: PaymentStatus.CANCELLED,
+        },
+      });
+      if (updatedAttempt.count !== 1) {
+        throw new ConflictException(
+          'The payment attempt status changed concurrently. Reload and retry.',
+        );
+      }
+      await tx.paymentEvent.create({
+        data: {
+          paymentAttemptId: attempt.id,
+          eventType: ORDER_CANCELLED_PAYMENT_EVENT,
+          previousStatus: attempt.status,
+          newStatus: PaymentStatus.CANCELLED,
+          actorId,
+          reason: 'Order cancelled',
+        },
+      });
+    }
+
     const items = [...order.items].sort(
       (left, right) => left.productId - right.productId,
     );

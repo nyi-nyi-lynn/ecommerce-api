@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto.js';
@@ -15,14 +14,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiDocumentEndpoint } from '../common/swagger/swagger.decorators.js';
+import { CurrentUser } from './decorators/current-user.decorator.js';
 
-interface AuthenticatedRequest {
-  user: {
-    sub: number;
-    email: string;
-    role: string;
-  };
-}
 @Controller('auth')
 @ApiTags('Authentication')
 export class AuthController {
@@ -84,7 +77,7 @@ export class AuthController {
     description: 'Returns the profile for the authenticated JWT subject.',
     errors: [401, 404, 500],
   })
-  me(@Req() req: AuthenticatedRequest) {
-    return this.authService.getProfile(req.user.sub);
+  me(@CurrentUser('sub') userId: number) {
+    return this.authService.getProfile(userId);
   }
 }

@@ -7,18 +7,15 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { AddCartItemDto } from './dto/add-cart-item.dto.js';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto.js';
 import { CartService } from './cart.service.js';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ApiDocumentEndpoint } from '../common/swagger/swagger.decorators.js';
-
-type AuthenticatedRequest = Request & { user: { sub: number } };
 
 @Controller('cart')
 @UseGuards(JwtAuthGuard)
@@ -34,8 +31,8 @@ export class CartController {
       'Returns the authenticated customer’s cart. Prices are informational current product prices; reading an empty cart does not create one.',
     errors: [401, 500],
   })
-  getCart(@Req() request: AuthenticatedRequest) {
-    return this.cart.getCart(request.user.sub);
+  getCart(@CurrentUser('sub') userId: number) {
+    return this.cart.getCart(userId);
   }
 
   @Post('items')
@@ -46,8 +43,11 @@ export class CartController {
     successStatus: 201,
     errors: [400, 401, 404, 409, 500],
   })
-  addItem(@Req() request: AuthenticatedRequest, @Body() dto: AddCartItemDto) {
-    return this.cart.addItem(request.user.sub, dto);
+  addItem(
+    @CurrentUser('sub') userId: number,
+    @Body() dto: AddCartItemDto,
+  ) {
+    return this.cart.addItem(userId, dto);
   }
 
   @Patch('items/:productId')
@@ -58,11 +58,11 @@ export class CartController {
     errors: [400, 401, 404, 409, 500],
   })
   updateItem(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Param('productId', ParseIntPipe) productId: number,
     @Body() dto: UpdateCartItemDto,
   ) {
-    return this.cart.updateItem(request.user.sub, productId, dto);
+    return this.cart.updateItem(userId, productId, dto);
   }
 
   @Delete('items/:productId')
@@ -72,10 +72,10 @@ export class CartController {
     errors: [400, 401, 404, 500],
   })
   removeItem(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Param('productId', ParseIntPipe) productId: number,
   ) {
-    return this.cart.removeItem(request.user.sub, productId);
+    return this.cart.removeItem(userId, productId);
   }
 
   @Delete()
@@ -85,7 +85,7 @@ export class CartController {
       'Removes all items while retaining the authenticated customer’s cart.',
     errors: [401, 500],
   })
-  clearCart(@Req() request: AuthenticatedRequest) {
-    return this.cart.clearCart(request.user.sub);
+  clearCart(@CurrentUser('sub') userId: number) {
+    return this.cart.clearCart(userId);
   }
 }

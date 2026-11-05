@@ -12,6 +12,11 @@ import { CreateProductDto } from './dto/create-product.dto.js';
 import { QueryProductsDto } from './dto/query-products.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { UploadsService } from '../modules/uploads/uploads.service.js';
+import { hasPrismaErrorCode } from '../common/prisma/prisma-error.util.js';
+import {
+  buildPaginatedResponse,
+  resolvePaginationParams,
+} from '../common/pagination/pagination.util.js';
 
 @Injectable()
 export class ProductsService {
@@ -42,11 +47,11 @@ export class ProductsService {
       });
     } catch (error) {
       if (uploaded) await this.uploads?.deleteProductImage(uploaded.public_id);
-      if (this.hasCode(error, 'P2002'))
+      if (hasPrismaErrorCode(error, 'P2002'))
         throw new ConflictException(
           'A product with this SKU or slug already exists.',
         );
-      if (this.hasCode(error, 'P2003'))
+      if (hasPrismaErrorCode(error, 'P2003'))
         throw new UnprocessableEntityException(
           'The selected category does not exist.',
         );
@@ -102,13 +107,13 @@ export class ProductsService {
       if (uploaded) {
         await this.uploads?.deleteProductImage(uploaded.public_id);
       }
-      if (this.hasCode(error, 'P2002'))
+      if (hasPrismaErrorCode(error, 'P2002'))
         throw new ConflictException(
           'A product with this SKU or slug already exists.',
         );
-      if (this.hasCode(error, 'P2025'))
+      if (hasPrismaErrorCode(error, 'P2025'))
         throw new NotFoundException('Product not found.');
-      if (this.hasCode(error, 'P2003'))
+      if (hasPrismaErrorCode(error, 'P2003'))
         throw new UnprocessableEntityException(
           'The selected category does not exist.',
         );
@@ -152,8 +157,7 @@ export class ProductsService {
         name: { contains: query.search.trim(), mode: 'insensitive' },
       }),
     };
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = resolvePaginationParams(query);
     const orderBy = [
       { [query.sortBy ?? 'createdAt']: query.sortOrder ?? 'desc' },
       { id: 'asc' },
@@ -161,16 +165,13 @@ export class ProductsService {
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy,
       }),
       this.prisma.product.count({ where }),
     ]);
-    return {
-      items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    return buildPaginatedResponse(items, total, page, limit);
   }
 
   async findOne(id: number) {
@@ -231,14 +232,5 @@ export class ProductsService {
       throw new ConflictException(
         'A product with this SKU or slug already exists.',
       );
-  }
-
-  private hasCode(error: unknown, code: string) {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === code
-    );
   }
 }

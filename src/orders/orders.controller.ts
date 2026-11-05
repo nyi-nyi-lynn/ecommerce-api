@@ -7,11 +7,10 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -24,8 +23,6 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
-
-type AuthenticatedRequest = Request & { user: { sub: number } };
 
 @Controller('orders')
 @ApiTags('Customer Orders')
@@ -42,8 +39,8 @@ export class OrdersController {
     successStatus: 201,
     errors: [400, 401, 404, 409, 422, 500],
   })
-  create(@Req() request: AuthenticatedRequest, @Body() dto: CreateOrderDto) {
-    return this.orders.create(request.user.sub, dto);
+  create(@CurrentUser('sub') userId: number, @Body() dto: CreateOrderDto) {
+    return this.orders.create(userId, dto);
   }
 
   @Post('checkout')
@@ -55,11 +52,8 @@ export class OrdersController {
     successStatus: 201,
     errors: [400, 401, 404, 409, 422, 500],
   })
-  checkout(
-    @Req() request: AuthenticatedRequest,
-    @Body() dto: CheckoutOrderDto,
-  ) {
-    return this.orders.checkout(request.user.sub, dto);
+  checkout(@CurrentUser('sub') userId: number, @Body() dto: CheckoutOrderDto) {
+    return this.orders.checkout(userId, dto);
   }
 
   @Get()
@@ -75,10 +69,10 @@ export class OrdersController {
     },
   })
   listMine(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Query() query: QueryOrdersDto,
   ) {
-    return this.orders.listMine(request.user.sub, query);
+    return this.orders.listMine(userId, query);
   }
 
   @Get(':id')
@@ -90,10 +84,10 @@ export class OrdersController {
     errors: [400, 401, 404, 500],
   })
   findMine(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.orders.findMine(request.user.sub, id);
+    return this.orders.findMine(userId, id);
   }
 
   @Post(':id/cancel')
@@ -105,10 +99,10 @@ export class OrdersController {
     errors: [400, 401, 404, 409, 500],
   })
   cancelMine(
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') userId: number,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    return this.orders.cancelMine(request.user.sub, id);
+    return this.orders.cancelMine(userId, id);
   }
 }
 
@@ -155,8 +149,8 @@ export class AdminOrdersController {
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateOrderStatusDto,
-    @Req() request: AuthenticatedRequest,
+    @CurrentUser('sub') actorId: number,
   ) {
-    return this.orders.updateStatus(id, dto, request.user.sub);
+    return this.orders.updateStatus(id, dto, actorId);
   }
 }

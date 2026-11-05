@@ -7,7 +7,6 @@ import {
   ParseIntPipe,
   Patch,
   Post,
-  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -15,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import multer from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { CategoriesService } from './categories.service.js';
 import { CreateCategoryDto } from './dto/create-category.dto.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
@@ -25,10 +25,7 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
-import type { Request } from 'express';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
-
-type RequestWithUser = Request & { user?: { sub?: number } };
 
 @Controller('categories')
 @ApiTags('Categories')
@@ -90,9 +87,9 @@ export class CategoriesController {
   create(
     @Body() dto: CreateCategoryDto,
     @UploadedFile() image: Express.Multer.File | undefined,
-    @Req() request: RequestWithUser,
+    @CurrentUser('sub') userId: number | undefined,
   ) {
-    return this.categoriesService.create(dto, image, request.user?.sub);
+    return this.categoriesService.create(dto, image, userId);
   }
 
   // PATCH /api/categories/:id
@@ -128,9 +125,9 @@ export class CategoriesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateCategoryDto,
     @UploadedFile() image: Express.Multer.File | undefined,
-    @Req() request: RequestWithUser,
+    @CurrentUser('sub') userId: number | undefined,
   ) {
-    return this.categoriesService.update(id, dto, image, request.user?.sub);
+    return this.categoriesService.update(id, dto, image, userId);
   }
 
   // DELETE /api/categories/:id
