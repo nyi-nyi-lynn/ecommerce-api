@@ -122,29 +122,32 @@ export class AuthService {
     // after the winner commits; the replay lookup below then runs outside the
     // transaction and observes that committed rotation.
     const rotated = await this.prisma
-      .$transaction(async (tx) => {
-        await tx.refreshToken.create({
-          data: {
-            id: next.selector,
-            userId: record.userId,
-            familyId: record.familyId,
-            tokenHash: next.hash,
-            expiresAt,
-          },
-        });
-        const claimed = await tx.refreshToken.updateMany({
-          where: {
-            id: record.id,
-            tokenHash: record.tokenHash,
-            revokedAt: null,
-            replacedByTokenId: null,
-            expiresAt: { gt: now },
-          },
-          data: { revokedAt: now, replacedByTokenId: next.selector },
-        });
-        if (claimed.count !== 1) throw new Error('REFRESH_TOKEN_CLAIM_LOST');
-        return true;
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })
+      .$transaction(
+        async (tx) => {
+          await tx.refreshToken.create({
+            data: {
+              id: next.selector,
+              userId: record.userId,
+              familyId: record.familyId,
+              tokenHash: next.hash,
+              expiresAt,
+            },
+          });
+          const claimed = await tx.refreshToken.updateMany({
+            where: {
+              id: record.id,
+              tokenHash: record.tokenHash,
+              revokedAt: null,
+              replacedByTokenId: null,
+              expiresAt: { gt: now },
+            },
+            data: { revokedAt: now, replacedByTokenId: next.selector },
+          });
+          if (claimed.count !== 1) throw new Error('REFRESH_TOKEN_CLAIM_LOST');
+          return true;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      )
       .catch(async (error: unknown) => {
         if (
           error instanceof Error &&

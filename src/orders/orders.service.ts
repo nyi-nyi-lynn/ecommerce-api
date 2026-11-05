@@ -60,7 +60,11 @@ const allowedTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
 type OrderLine = { productId: number; quantity: number };
 type OrderShipping = Pick<
   CreateOrderDto | CheckoutOrderDto,
-  'shippingName' | 'shippingPhone' | 'shippingAddress' | 'note' | 'paymentMethod'
+  | 'shippingName'
+  | 'shippingPhone'
+  | 'shippingAddress'
+  | 'note'
+  | 'paymentMethod'
 >;
 
 @Injectable()
@@ -115,7 +119,11 @@ export class OrdersService {
   }
 
   private validatePaymentMethod(method?: PaymentMethod) {
-    if (method !== undefined && method !== PaymentMethod.COD && method !== PaymentMethod.MANUAL) {
+    if (
+      method !== undefined &&
+      method !== PaymentMethod.COD &&
+      method !== PaymentMethod.MANUAL
+    ) {
       throw new BadRequestException('Unsupported payment method.');
     }
   }
@@ -168,7 +176,9 @@ export class OrdersService {
         'One or more products are unavailable.',
       );
     }
-    const productById = new Map(products.map((product) => [product.id, product]));
+    const productById = new Map(
+      products.map((product) => [product.id, product]),
+    );
     const itemSnapshots = requested.map((item) => {
       const product = productById.get(item.productId)!;
       const unitPrice = new Prisma.Decimal(product.price.toString());
@@ -310,7 +320,9 @@ export class OrdersService {
         );
       }
       if (order.paymentStatus === PaymentStatus.PAID) {
-        throw new ConflictException('Paid orders cannot be cancelled without refund support.');
+        throw new ConflictException(
+          'Paid orders cannot be cancelled without refund support.',
+        );
       }
       await this.cancelAndRestore(tx, order, userId, {
         userId,
@@ -346,8 +358,13 @@ export class OrdersService {
         );
       }
 
-      if (dto.status === OrderStatus.CANCELLED && order.paymentStatus === PaymentStatus.PAID) {
-        throw new ConflictException('Paid orders cannot be cancelled without refund support.');
+      if (
+        dto.status === OrderStatus.CANCELLED &&
+        order.paymentStatus === PaymentStatus.PAID
+      ) {
+        throw new ConflictException(
+          'Paid orders cannot be cancelled without refund support.',
+        );
       }
 
       if (dto.status === OrderStatus.CANCELLED) {
@@ -382,7 +399,11 @@ export class OrdersService {
       items: Array<{ productId: number; quantity: number }>;
     },
     actorId: number,
-    ownerFilter: { userId?: number; status: OrderStatus; paymentStatus?: { not: PaymentStatus } },
+    ownerFilter: {
+      userId?: number;
+      status: OrderStatus;
+      paymentStatus?: { not: PaymentStatus };
+    },
   ) {
     const updated = await tx.order.updateMany({
       where: { id: order.id, ...ownerFilter },

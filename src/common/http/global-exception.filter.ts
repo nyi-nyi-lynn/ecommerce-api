@@ -48,14 +48,16 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         return {
           statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
           message: 'The product image must be 5 MB or smaller.',
-          error: STATUS_CODES[HttpStatus.PAYLOAD_TOO_LARGE] ?? 'Payload Too Large',
+          error:
+            STATUS_CODES[HttpStatus.PAYLOAD_TOO_LARGE] ?? 'Payload Too Large',
         };
       }
       return {
         statusCode: HttpStatus.BAD_REQUEST,
-        message: exception.code === 'LIMIT_UNEXPECTED_FILE'
-          ? 'Use the predictable file field name: file.'
-          : 'The uploaded file is invalid.',
+        message:
+          exception.code === 'LIMIT_UNEXPECTED_FILE'
+            ? 'Use the predictable file field name: file.'
+            : 'The uploaded file is invalid.',
         error: STATUS_CODES[HttpStatus.BAD_REQUEST] ?? 'Bad Request',
       };
     }

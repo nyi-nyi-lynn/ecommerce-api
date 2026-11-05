@@ -6,17 +6,21 @@ import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 
 @Module({
-  imports : [
+  imports: [
     JwtModule.registerAsync({
-      inject : [ConfigService],
-      useFactory : (config : ConfigService) => ({
-        secret : config.getOrThrow<string>(`JWT_SECRET`),
-        signOptions: { expiresIn: config.getOrThrow<string>('JWT_ACCESS_TOKEN_TTL') as `${number}${'s' | 'm' | 'h' | 'd'}` },
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.getOrThrow<string>(`JWT_SECRET`),
+        signOptions: {
+          expiresIn: config.getOrThrow<string>(
+            'JWT_ACCESS_TOKEN_TTL',
+          ) as `${number}${'s' | 'm' | 'h' | 'd'}`,
+        },
       }),
-    })
+    }),
   ],
   controllers: [AuthController],
-  providers: [AuthService,JwtAuthGuard],
-  exports : [JwtAuthGuard, JwtModule]
+  providers: [AuthService, JwtAuthGuard],
+  exports: [JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

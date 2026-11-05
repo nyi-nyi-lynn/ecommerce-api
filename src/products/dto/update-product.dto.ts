@@ -74,7 +74,8 @@ export class UpdateProductDto {
   @Min(1)
   categoryId?: number;
   @ApiPropertyOptional({
-    description: 'Legacy image URL. New clients should upload the image multipart field instead.',
+    description:
+      'Legacy image URL. New clients should upload the image multipart field instead.',
     example: 'https://cdn.example.com/product.jpg',
     maxLength: 2048,
     format: 'uri',

@@ -22,10 +22,17 @@ export class CategoriesService {
   ) {}
 
   // CREATE
-  async create(dto: CreateCategoryDto, image?: Express.Multer.File, userId?: number) {
+  async create(
+    dto: CreateCategoryDto,
+    image?: Express.Multer.File,
+    userId?: number,
+  ) {
     let uploaded: { secure_url: string; public_id: string } | undefined;
     if (image) {
-      if (!this.uploads) throw new ServiceUnavailableException('Category image uploads are unavailable.');
+      if (!this.uploads)
+        throw new ServiceUnavailableException(
+          'Category image uploads are unavailable.',
+        );
       uploaded = await this.uploads.uploadCategoryImage(image, userId);
     }
     try {
@@ -76,7 +83,12 @@ export class CategoriesService {
   }
 
   // UPDATE
-  async update(id: number, dto: UpdateCategoryDto, image?: Express.Multer.File, userId?: number) {
+  async update(
+    id: number,
+    dto: UpdateCategoryDto,
+    image?: Express.Multer.File,
+    userId?: number,
+  ) {
     const existing = await this.prisma.category.findUnique({
       where: { id },
       select: { id: true, imageUrl: true, imagePublicId: true },
@@ -88,7 +100,10 @@ export class CategoriesService {
 
     let uploaded: { secure_url: string; public_id: string } | undefined;
     if (image) {
-      if (!this.uploads) throw new ServiceUnavailableException('Category image uploads are unavailable.');
+      if (!this.uploads)
+        throw new ServiceUnavailableException(
+          'Category image uploads are unavailable.',
+        );
       uploaded = await this.uploads.uploadCategoryImage(image, userId);
     }
 
@@ -132,7 +147,11 @@ export class CategoriesService {
       throw error;
     }
 
-    if (uploaded && existing.imagePublicId && existing.imagePublicId !== uploaded.public_id) {
+    if (
+      uploaded &&
+      existing.imagePublicId &&
+      existing.imagePublicId !== uploaded.public_id
+    ) {
       await this.uploads?.deleteCategoryImage(existing.imagePublicId);
     }
     return updated;
@@ -155,7 +174,9 @@ export class CategoriesService {
       });
 
       if (existing.imagePublicId?.trim()) {
-        const cleanupSucceeded = await this.uploads?.deleteCategoryImage(existing.imagePublicId);
+        const cleanupSucceeded = await this.uploads?.deleteCategoryImage(
+          existing.imagePublicId,
+        );
         if (cleanupSucceeded === false) {
           this.logger.error(
             `Cloudinary category image cleanup failed for category ${id} and public ID ${existing.imagePublicId}.`,

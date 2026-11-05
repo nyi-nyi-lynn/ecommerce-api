@@ -29,10 +29,14 @@ export class RbacService {
   async createRole(dto: CreateRoleDto) {
     try {
       return await this.prisma.role.create({
-        data: { name: dto.name.trim(), description: dto.description?.trim() || null },
+        data: {
+          name: dto.name.trim(),
+          description: dto.description?.trim() || null,
+        },
       });
     } catch (error) {
-      if (this.hasCode(error, 'P2002')) throw new ConflictException('Role name already exists.');
+      if (this.hasCode(error, 'P2002'))
+        throw new ConflictException('Role name already exists.');
       throw error;
     }
   }
@@ -43,12 +47,16 @@ export class RbacService {
         where: { id },
         data: {
           ...(dto.name !== undefined && { name: dto.name.trim() }),
-          ...(dto.description !== undefined && { description: dto.description.trim() || null }),
+          ...(dto.description !== undefined && {
+            description: dto.description.trim() || null,
+          }),
         },
       });
     } catch (error) {
-      if (this.hasCode(error, 'P2002')) throw new ConflictException('Role name already exists.');
-      if (this.hasCode(error, 'P2025')) throw new NotFoundException('Role not found.');
+      if (this.hasCode(error, 'P2002'))
+        throw new ConflictException('Role name already exists.');
+      if (this.hasCode(error, 'P2025'))
+        throw new NotFoundException('Role not found.');
       throw error;
     }
   }
@@ -59,22 +67,31 @@ export class RbacService {
       include: { permissions: { include: { permission: true } } },
     });
     if (!role) throw new NotFoundException('Role not found.');
-    const permissions = await this.prisma.permission.findMany({ where: { id: { in: permissionIds } } });
+    const permissions = await this.prisma.permission.findMany({
+      where: { id: { in: permissionIds } },
+    });
     if (permissions.length !== permissionIds.length) {
-      throw new UnprocessableEntityException('One or more permissions do not exist.');
+      throw new UnprocessableEntityException(
+        'One or more permissions do not exist.',
+      );
     }
 
-    const removingManage = role.permissions.some((link) => link.permission.code === 'role:manage') &&
+    const removingManage =
+      role.permissions.some((link) => link.permission.code === 'role:manage') &&
       !permissions.some((permission) => permission.code === 'role:manage');
     if (removingManage) {
       const otherManagers = await this.prisma.user.count({
         where: {
           roleId: { not: roleId },
-          role: { permissions: { some: { permission: { code: 'role:manage' } } } },
+          role: {
+            permissions: { some: { permission: { code: 'role:manage' } } },
+          },
         },
       });
       if (otherManagers === 0) {
-        throw new ConflictException('Cannot remove the final role management access.');
+        throw new ConflictException(
+          'Cannot remove the final role management access.',
+        );
       }
     }
 
@@ -94,7 +111,10 @@ export class RbacService {
 
   async assignUserRole(userId: number, roleId: number, actorId: number) {
     const [target, role] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: userId }, include: { role: true } }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { role: true },
+      }),
       this.prisma.role.findUnique({ where: { id: roleId } }),
     ]);
     if (!target) throw new NotFoundException('User not found.');
@@ -107,17 +127,30 @@ export class RbacService {
       const otherManagers = await this.prisma.user.count({
         where: {
           id: { not: actorId },
-          role: { permissions: { some: { permission: { code: 'role:manage' } } } },
+          role: {
+            permissions: { some: { permission: { code: 'role:manage' } } },
+          },
         },
       });
       if (!keepsManagerAccess && otherManagers === 0) {
-        throw new ConflictException('Cannot remove the final role management access.');
+        throw new ConflictException(
+          'Cannot remove the final role management access.',
+        );
       }
     }
-    return this.prisma.user.update({ where: { id: userId }, data: { roleId }, select: { id: true, role: true } });
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { roleId },
+      select: { id: true, role: true },
+    });
   }
 
   private hasCode(error: unknown, code: string): boolean {
-    return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === code
+    );
   }
 }

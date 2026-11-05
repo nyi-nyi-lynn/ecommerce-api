@@ -23,10 +23,10 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const required = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     if (!required?.length) return true;
 
     const request = context.switchToHttp().getRequest<RequestWithUser>();
@@ -40,7 +40,13 @@ export class PermissionsGuard implements CanActivate {
         where: { id: userId as number },
         select: {
           isActive: true,
-          role: { select: { permissions: { select: { permission: { select: { code: true } } } } } },
+          role: {
+            select: {
+              permissions: {
+                select: { permission: { select: { code: true } } },
+              },
+            },
+          },
         },
       });
       if (!user?.isActive || !user.role) {
@@ -51,8 +57,12 @@ export class PermissionsGuard implements CanActivate {
       );
     }
 
-    if (!required.every((permission) => request.rbacPermissions?.has(permission))) {
-      throw new ForbiddenException('You do not have permission to perform this action.');
+    if (
+      !required.every((permission) => request.rbacPermissions?.has(permission))
+    ) {
+      throw new ForbiddenException(
+        'You do not have permission to perform this action.',
+      );
     }
     return true;
   }

@@ -94,7 +94,9 @@ export class CartService {
         RETURNING "id"
       `;
       if (rows.length === 0) {
-        throw new ConflictException('Cart item quantity exceeds the supported maximum.');
+        throw new ConflictException(
+          'Cart item quantity exceeds the supported maximum.',
+        );
       }
     });
 
@@ -112,7 +114,8 @@ export class CartService {
         where: { cartId: cart.id, productId },
         data: { quantity: dto.quantity },
       });
-      if (result.count === 0) throw new NotFoundException('Cart item not found.');
+      if (result.count === 0)
+        throw new NotFoundException('Cart item not found.');
     });
     return this.getCart(userId);
   }
@@ -126,7 +129,8 @@ export class CartService {
       const result = await tx.cartItem.deleteMany({
         where: { cartId: cart.id, productId },
       });
-      if (result.count === 0) throw new NotFoundException('Cart item not found.');
+      if (result.count === 0)
+        throw new NotFoundException('Cart item not found.');
     });
     return this.getCart(userId);
   }
@@ -174,7 +178,9 @@ export class CartService {
 
   private validateInt(value: number, label: string) {
     if (!Number.isInteger(value) || value < 1 || value > MAX_CART_INT) {
-      throw new BadRequestException(`${label} must be a positive 32-bit integer.`);
+      throw new BadRequestException(
+        `${label} must be a positive 32-bit integer.`,
+      );
     }
   }
 }

@@ -7,5 +7,9 @@ import { ProductsController } from './products.controller.js';
 import { ProductsService } from './products.service.js';
 import { UploadsModule } from '../modules/uploads/uploads.module.js';
 
-@Module({ imports: [PrismaModule, AuthModule, RbacModule, UploadsModule], controllers: [ProductsController], providers: [ProductsService, JwtAuthGuard] })
+@Module({
+  imports: [PrismaModule, AuthModule, RbacModule, UploadsModule],
+  controllers: [ProductsController],
+  providers: [ProductsService, JwtAuthGuard],
+})
 export class ProductsModule {}

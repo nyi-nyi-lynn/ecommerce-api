@@ -13,10 +13,19 @@ import { QueryStockMovementsDto } from './dto/query-stock-movements.dto.js';
 export class StockService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async initialize(productId: number, dto: InitializeStockDto, actorId: number) {
+  async initialize(
+    productId: number,
+    dto: InitializeStockDto,
+    actorId: number,
+  ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        if (!(await tx.product.findUnique({ where: { id: productId }, select: { id: true } }))) {
+        if (
+          !(await tx.product.findUnique({
+            where: { id: productId },
+            select: { id: true },
+          }))
+        ) {
           throw new NotFoundException('Product not found.');
         }
 
@@ -38,7 +47,9 @@ export class StockService {
       });
     } catch (error) {
       if (this.hasCode(error, 'P2002')) {
-        throw new ConflictException('Stock has already been initialized for this product.');
+        throw new ConflictException(
+          'Stock has already been initialized for this product.',
+        );
       }
       if (this.hasCode(error, 'P2003')) {
         throw new NotFoundException('Product not found.');
@@ -54,11 +65,20 @@ export class StockService {
         select: { id: true, stock: { select: { productId: true } } },
       });
       if (!product) throw new NotFoundException('Product not found.');
-      if (!product.stock) throw new NotFoundException('Stock has not been initialized for this product.');
+      if (!product.stock)
+        throw new NotFoundException(
+          'Stock has not been initialized for this product.',
+        );
 
-      const result = await this.changeQuantity(tx, productId, dto.quantityChange);
+      const result = await this.changeQuantity(
+        tx,
+        productId,
+        dto.quantityChange,
+      );
       if (!result) {
-        throw new ConflictException('Stock adjustment would make the quantity invalid.');
+        throw new ConflictException(
+          'Stock adjustment would make the quantity invalid.',
+        );
       }
 
       const movement = await this.createMovement(tx, {
@@ -190,12 +210,25 @@ export class StockService {
     });
     if (!product) throw new NotFoundException('Product not found.');
     const stock = product.stock;
-    if (!stock) throw new NotFoundException('Stock has not been initialized for this product.');
-    return { productId: stock.productId, quantity: stock.quantity, availableQuantity: stock.quantity - stock.reservedQuantity, updatedAt: stock.updatedAt };
+    if (!stock)
+      throw new NotFoundException(
+        'Stock has not been initialized for this product.',
+      );
+    return {
+      productId: stock.productId,
+      quantity: stock.quantity,
+      availableQuantity: stock.quantity - stock.reservedQuantity,
+      updatedAt: stock.updatedAt,
+    };
   }
 
   async getMovements(productId: number, query: QueryStockMovementsDto) {
-    if (!(await this.prisma.product.findUnique({ where: { id: productId }, select: { id: true } }))) {
+    if (
+      !(await this.prisma.product.findUnique({
+        where: { id: productId },
+        select: { id: true },
+      }))
+    ) {
       throw new NotFoundException('Product not found.');
     }
     const where: Prisma.StockMovementWhereInput = { productId };
@@ -222,10 +255,18 @@ export class StockService {
       }),
       this.prisma.stockMovement.count({ where }),
     ]);
-    return { items, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return {
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   private hasCode(error: unknown, code: string) {
-    return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === code
+    );
   }
 }

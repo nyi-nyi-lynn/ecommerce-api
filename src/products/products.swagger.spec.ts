@@ -110,11 +110,25 @@ describe('Swagger query parameters', () => {
       const statusEnumsByPath = new Map([
         [
           '/api/admin/payments',
-          ['PENDING', 'UNDER_REVIEW', 'PAID', 'REJECTED', 'FAILED', 'CANCELLED'],
+          [
+            'PENDING',
+            'UNDER_REVIEW',
+            'PAID',
+            'REJECTED',
+            'FAILED',
+            'CANCELLED',
+          ],
         ],
         [
           '/api/admin/orders',
-          ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED'],
+          [
+            'PENDING',
+            'CONFIRMED',
+            'PROCESSING',
+            'SHIPPED',
+            'DELIVERED',
+            'CANCELLED',
+          ],
         ],
       ]);
 
@@ -129,7 +143,9 @@ describe('Swagger query parameters', () => {
           );
           expect(matching, `${path} ${name} definitions`).toHaveLength(1);
           const parameter = matching[0];
-          expect(parameter && !('$ref' in parameter) ? parameter : undefined).toMatchObject({
+          expect(
+            parameter && !('$ref' in parameter) ? parameter : undefined,
+          ).toMatchObject({
             required: false,
             schema: {
               type: 'integer',

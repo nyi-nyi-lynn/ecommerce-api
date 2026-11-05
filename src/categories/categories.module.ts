@@ -8,8 +8,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { UploadsModule } from '../modules/uploads/uploads.module.js';
 
 @Module({
-  imports : [PrismaModule,AuthModule,RbacModule,UploadsModule],
+  imports: [PrismaModule, AuthModule, RbacModule, UploadsModule],
   controllers: [CategoriesController],
-  providers: [CategoriesService,JwtAuthGuard]
+  providers: [CategoriesService, JwtAuthGuard],
 })
 export class CategoriesModule {}

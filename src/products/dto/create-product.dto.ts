@@ -71,7 +71,8 @@ export class CreateProductDto {
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(2048)
   @ApiPropertyOptional({
-    description: 'Legacy image URL. New clients should upload the image multipart field instead.',
+    description:
+      'Legacy image URL. New clients should upload the image multipart field instead.',
     example: 'https://cdn.example.com/product.jpg',
     maxLength: 2048,
     format: 'uri',

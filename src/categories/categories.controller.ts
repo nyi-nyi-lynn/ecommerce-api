@@ -75,10 +75,12 @@ export class CategoriesController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('image', {
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
-  }))
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+    }),
+  )
   @ApiDocumentEndpoint({
     summary: 'Create category',
     description: `Creates a category. ${DYNAMIC_RBAC_DESCRIPTION}`,
@@ -111,10 +113,12 @@ export class CategoriesController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('image', {
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
-  }))
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+    }),
+  )
   @ApiDocumentEndpoint({
     summary: 'Update category',
     description: `Updates category fields. ${DYNAMIC_RBAC_DESCRIPTION}`,

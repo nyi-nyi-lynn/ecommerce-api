@@ -32,15 +32,22 @@ export class UploadsService {
   async uploadProductImage(
     file: Express.Multer.File | undefined,
     userId?: number,
-    resourceFolder = userId === undefined ? PRODUCT_IMAGE_FOLDER : `${PRODUCT_IMAGE_FOLDER}/users/${userId}`,
+    resourceFolder = userId === undefined
+      ? PRODUCT_IMAGE_FOLDER
+      : `${PRODUCT_IMAGE_FOLDER}/users/${userId}`,
   ) {
     return this.uploadImage(file, resourceFolder, 'Product');
   }
 
-  async uploadCategoryImage(file: Express.Multer.File | undefined, userId?: number) {
+  async uploadCategoryImage(
+    file: Express.Multer.File | undefined,
+    userId?: number,
+  ) {
     return this.uploadImage(
       file,
-      userId === undefined ? CATEGORY_IMAGE_FOLDER : `${CATEGORY_IMAGE_FOLDER}/users/${userId}`,
+      userId === undefined
+        ? CATEGORY_IMAGE_FOLDER
+        : `${CATEGORY_IMAGE_FOLDER}/users/${userId}`,
       'Category',
     );
   }
@@ -51,14 +58,19 @@ export class UploadsService {
 
   async uploadImages(files: Express.Multer.File[] | undefined, folder: string) {
     if (!files?.length) return [];
-    return Promise.all(files.map((file) => this.uploadProductImage(file, undefined, folder)));
+    return Promise.all(
+      files.map((file) => this.uploadProductImage(file, undefined, folder)),
+    );
   }
 
   async deleteProductImage(publicId: string) {
     if (!this.isOwnedProductAsset(publicId)) return false;
     const cloudinary = this.requireCloudinary();
     try {
-      await cloudinary.uploader.destroy(publicId, { resource_type: 'image', invalidate: true });
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: 'image',
+        invalidate: true,
+      });
       return true;
     } catch {
       this.logger.error('Cloudinary product image cleanup failed.');
@@ -75,16 +87,29 @@ export class UploadsService {
     resourceFolder: string,
     resourceName: string,
   ) {
-    if (!file) throw new BadRequestException(`${resourceName} image file is required.`);
-    if (!file.size) throw new BadRequestException(`The ${resourceName.toLowerCase()} image file is empty.`);
+    if (!file)
+      throw new BadRequestException(`${resourceName} image file is required.`);
+    if (!file.size)
+      throw new BadRequestException(
+        `The ${resourceName.toLowerCase()} image file is empty.`,
+      );
     if (file.size > MAX_PRODUCT_IMAGE_BYTES) {
-      throw new PayloadTooLargeException(`The ${resourceName.toLowerCase()} image must be 5 MB or smaller.`);
+      throw new PayloadTooLargeException(
+        `The ${resourceName.toLowerCase()} image must be 5 MB or smaller.`,
+      );
     }
 
     const { fileTypeFromBuffer } = await import('file-type');
     const detected = await fileTypeFromBuffer(file.buffer);
-    if (!detected || !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(detected.mime)) {
-      throw new BadRequestException(`Only JPEG, PNG, WebP, and AVIF ${resourceName.toLowerCase()} images are allowed.`);
+    if (
+      !detected ||
+      !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(
+        detected.mime,
+      )
+    ) {
+      throw new BadRequestException(
+        `Only JPEG, PNG, WebP, and AVIF ${resourceName.toLowerCase()} images are allowed.`,
+      );
     }
 
     const cloudinary = this.requireCloudinary();
@@ -99,7 +124,9 @@ export class UploadsService {
           },
           (error, uploaded) => {
             if (error || !uploaded) {
-              reject(error ?? new Error('Cloudinary returned no upload result.'));
+              reject(
+                error ?? new Error('Cloudinary returned no upload result.'),
+              );
               return;
             }
             resolve(uploaded);
@@ -117,7 +144,9 @@ export class UploadsService {
         bytes: result.bytes,
       };
     } catch {
-      throw new ServiceUnavailableException(`${resourceName} image upload could not be completed.`);
+      throw new ServiceUnavailableException(
+        `${resourceName} image upload could not be completed.`,
+      );
     }
   }
 
@@ -125,7 +154,10 @@ export class UploadsService {
     if (!publicId.startsWith(ownedFolder)) return false;
     const cloudinary = this.requireCloudinary();
     try {
-      await cloudinary.uploader.destroy(publicId, { resource_type: 'image', invalidate: true });
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: 'image',
+        invalidate: true,
+      });
       return true;
     } catch {
       this.logger.error('Cloudinary resource image cleanup failed.');

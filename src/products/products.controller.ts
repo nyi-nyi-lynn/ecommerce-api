@@ -55,10 +55,12 @@ export class ProductsController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('image', {
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
-  }))
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+    }),
+  )
   @ApiDocumentEndpoint({
     summary: 'Create product',
     description: `Creates a product; its category must exist. ${DYNAMIC_RBAC_DESCRIPTION}`,
@@ -93,10 +95,12 @@ export class ProductsController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('image', {
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
-  }))
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+    }),
+  )
   @ApiDocumentEndpoint({
     summary: 'Update product',
     description: `Updates product fields. ${DYNAMIC_RBAC_DESCRIPTION}`,
