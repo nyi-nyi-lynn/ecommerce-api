@@ -26,7 +26,7 @@ export class CategoriesService {
   async create(
     dto: CreateCategoryDto,
     image?: Express.Multer.File,
-    userId?: number,
+    userId?: string,
   ) {
     let uploaded: { secure_url: string; public_id: string } | undefined;
     if (image) {
@@ -68,7 +68,7 @@ export class CategoriesService {
   }
 
   // READ ONE
-  async findOne(id: number) {
+  async findOne(id: string) {
     const category = await this.prisma.category.findFirst({
       where: {
         id,
@@ -85,10 +85,10 @@ export class CategoriesService {
 
   // UPDATE
   async update(
-    id: number,
+    id: string,
     dto: UpdateCategoryDto,
     image?: Express.Multer.File,
-    userId?: number,
+    userId?: string,
   ) {
     const existing = await this.prisma.category.findUnique({
       where: { id },
@@ -159,7 +159,7 @@ export class CategoriesService {
   }
 
   // DELETE
-  async remove(id: number) {
+  async remove(id: string) {
     const existing = await this.prisma.category.findUnique({
       where: { id },
       select: { id: true, imagePublicId: true },

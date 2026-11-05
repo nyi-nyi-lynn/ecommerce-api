@@ -8,6 +8,11 @@ import { Prisma } from '../generated/prisma/client.js';
 import { ProductsService } from './products.service.js';
 
 describe('ProductsService', () => {
+  const CATEGORY_ID = '00000000-0000-4000-8000-000000000001';
+  const PRODUCT_ID = '00000000-0000-4000-8000-000000000010';
+  const MISSING_PRODUCT_ID = '00000000-0000-4000-8000-000000000999';
+  const USER_ID = '00000000-0000-4000-8000-000000000002';
+
   let service: ProductsService;
   let prisma: any;
   let uploads: any;
@@ -23,20 +28,20 @@ describe('ProductsService', () => {
   beforeEach(() => {
     prisma = {
       category: {
-        findUnique: vi.fn().mockResolvedValue({ id: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ id: CATEGORY_ID }),
       },
       product: {
         findUnique: vi.fn().mockResolvedValue(null),
         findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn(async ({ data }: any) => ({
-          id: 10,
+          id: PRODUCT_ID,
           ...data,
           createdAt: new Date(),
           updatedAt: new Date(),
         })),
         update: vi.fn(async ({ where, data }: any) => ({
           id: where.id,
-          categoryId: 1,
+          categoryId: CATEGORY_ID,
           name: 'Product',
           slug: 'product',
           sku: 'SKU-1',
@@ -54,7 +59,7 @@ describe('ProductsService', () => {
     uploads = {
       uploadProductImage: vi.fn().mockResolvedValue({
         secure_url: 'https://res.cloudinary.com/demo/image/upload/new.jpg',
-        public_id: 'ecommerce/products/users/2/new',
+        public_id: `ecommerce/products/users/${USER_ID}/new`,
       }),
       deleteProductImage: vi.fn().mockResolvedValue(true),
     };
@@ -69,13 +74,13 @@ describe('ProductsService', () => {
         slug: '  wireless-mouse  ',
         sku: '  WM-01  ',
         price: 25.5,
-        categoryId: 1,
+        categoryId: CATEGORY_ID,
       },
       mockFile,
-      2,
+      USER_ID,
     );
 
-    expect(uploads.uploadProductImage).toHaveBeenCalledWith(mockFile, 2);
+    expect(uploads.uploadProductImage).toHaveBeenCalledWith(mockFile, USER_ID);
     expect(prisma.product.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -83,7 +88,7 @@ describe('ProductsService', () => {
           slug: 'wireless-mouse',
           sku: 'WM-01',
           imageUrl: 'https://res.cloudinary.com/demo/image/upload/new.jpg',
-          imagePublicId: 'ecommerce/products/users/2/new',
+          imagePublicId: `ecommerce/products/users/${USER_ID}/new`,
         }),
       }),
     );
@@ -100,34 +105,34 @@ describe('ProductsService', () => {
           slug: 'wireless-mouse',
           sku: 'WM-01',
           price: 25.5,
-          categoryId: 1,
+          categoryId: CATEGORY_ID,
         },
         mockFile,
-        2,
+        USER_ID,
       ),
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(uploads.deleteProductImage).toHaveBeenCalledWith(
-      'ecommerce/products/users/2/new',
+      `ecommerce/products/users/${USER_ID}/new`,
     );
   });
 
   it('supports imageUrl fallback when no file is uploaded and deletes previous Cloudinary asset on update', async () => {
     prisma.product.findUnique.mockImplementation(async ({ where }: any) => {
-      if (where.id === 10) {
+      if (where.id === PRODUCT_ID) {
         return {
-          id: 10,
-          imagePublicId: 'ecommerce/products/users/2/old',
+          id: PRODUCT_ID,
+          imagePublicId: `ecommerce/products/users/${USER_ID}/old`,
         };
       }
       return null;
     });
 
-    await service.update(10, { name: 'Updated Mouse' }, mockFile, 2);
+    await service.update(PRODUCT_ID, { name: 'Updated Mouse' }, mockFile, USER_ID);
 
-    expect(uploads.uploadProductImage).toHaveBeenCalledWith(mockFile, 2);
+    expect(uploads.uploadProductImage).toHaveBeenCalledWith(mockFile, USER_ID);
     expect(uploads.deleteProductImage).toHaveBeenCalledWith(
-      'ecommerce/products/users/2/old',
+      `ecommerce/products/users/${USER_ID}/old`,
     );
   });
 
@@ -140,10 +145,10 @@ describe('ProductsService', () => {
           slug: 'mouse',
           sku: 'M-1',
           price: 10,
-          categoryId: 1,
+          categoryId: CATEGORY_ID,
         },
         mockFile,
-        2,
+        USER_ID,
       ),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
@@ -153,12 +158,12 @@ describe('ProductsService', () => {
       service.findAll({ minPrice: 100, maxPrice: 50 }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
 
-    prisma.product.findMany.mockResolvedValueOnce([{ id: 10, name: 'Mouse' }]);
+    prisma.product.findMany.mockResolvedValueOnce([{ id: PRODUCT_ID, name: 'Mouse' }]);
     prisma.product.count.mockResolvedValueOnce(1);
 
     const result = await service.findAll({ page: 2, limit: 5 });
     expect(result).toEqual({
-      items: [{ id: 10, name: 'Mouse' }],
+      items: [{ id: PRODUCT_ID, name: 'Mouse' }],
       pagination: {
         page: 2,
         limit: 5,
@@ -172,7 +177,9 @@ describe('ProductsService', () => {
   });
 
   it('throws NotFoundException when product or category does not exist', async () => {
-    await expect(service.findOne(999)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.findOne(MISSING_PRODUCT_ID)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
     await expect(service.findBySlug('missing')).rejects.toBeInstanceOf(
       NotFoundException,
     );

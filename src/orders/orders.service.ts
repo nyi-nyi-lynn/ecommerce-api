@@ -6,6 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { isUUID } from 'class-validator';
 import {
   OrderStatus,
   PaymentMethod,
@@ -68,7 +69,7 @@ const allowedTransitions: Record<OrderStatus, readonly OrderStatus[]> = {
   [OrderStatus.CANCELLED]: [],
 };
 
-type OrderLine = { productId: number; quantity: number };
+type OrderLine = { productId: string; quantity: number };
 type OrderShipping = Pick<
   CheckoutOrderDto,
   | 'shippingName'
@@ -85,7 +86,7 @@ export class OrdersService {
     private readonly stock: StockService,
   ) {}
 
-  async create(userId: number, dto: CreateOrderDto) {
+  async create(userId: string, dto: CreateOrderDto) {
     this.validatePaymentMethod(dto.paymentMethod);
     const requested = dto.items ?? [];
     this.validateOrderLines(requested);
@@ -95,13 +96,13 @@ export class OrdersService {
     });
   }
 
-  async checkout(userId: number, dto: CheckoutOrderDto) {
+  async checkout(userId: string, dto: CheckoutOrderDto) {
     this.validatePaymentMethod(dto.paymentMethod);
     return this.prisma.$transaction(async (tx) => {
       // Serialize checkout and Cart writes for this owner. The next statement
       // reads CartItems after any preceding checkout has committed.
-      const carts = await tx.$queryRaw<Array<{ id: number }>>`
-        SELECT "id" FROM "Cart" WHERE "userId" = ${userId} FOR UPDATE
+      const carts = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "Cart" WHERE "userId" = ${userId}::uuid FOR UPDATE
       `;
       const cart = carts[0];
       if (!cart) throw new BadRequestException('Cart is empty.');
@@ -148,9 +149,8 @@ export class OrdersService {
     if (
       requested.some(
         (item) =>
-          !Number.isInteger(item.productId) ||
-          item.productId < 1 ||
-          item.productId > MAX_INT ||
+          typeof item.productId !== 'string' ||
+          !isUUID(item.productId) ||
           !Number.isInteger(item.quantity) ||
           item.quantity < 1 ||
           item.quantity > MAX_INT,
@@ -170,7 +170,7 @@ export class OrdersService {
 
   private async createOrderInTransaction(
     tx: Prisma.TransactionClient,
-    userId: number,
+    userId: string,
     requested: OrderLine[],
     dto: OrderShipping,
   ) {
@@ -234,8 +234,8 @@ export class OrdersService {
     });
 
     // Stable order prevents avoidable deadlocks when concurrent orders share products.
-    for (const item of [...requested].sort(
-      (left, right) => left.productId - right.productId,
+    for (const item of [...requested].sort((left, right) =>
+      left.productId.localeCompare(right.productId),
     )) {
       await this.stock.consumeForOrder(
         tx,
@@ -252,7 +252,7 @@ export class OrdersService {
     });
   }
 
-  async listMine(userId: number, query: QueryOrdersDto) {
+  async listMine(userId: string, query: QueryOrdersDto) {
     const { page, limit, skip } = resolvePaginationParams(query);
     const where: Prisma.OrderWhereInput = { userId };
     const [items, total] = await Promise.all([
@@ -268,7 +268,7 @@ export class OrdersService {
     return buildPaginatedResponse(items, total, page, limit);
   }
 
-  async findMine(userId: number, orderId: number) {
+  async findMine(userId: string, orderId: string) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
       select: orderDetailSelect,
@@ -295,7 +295,7 @@ export class OrdersService {
     return buildPaginatedResponse(items, total, page, limit);
   }
 
-  async findById(orderId: number) {
+  async findById(orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       select: orderDetailSelect,
@@ -304,7 +304,7 @@ export class OrdersService {
     return order;
   }
 
-  async cancelMine(userId: number, orderId: number) {
+  async cancelMine(userId: string, orderId: string) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockOrder(tx, orderId, userId);
@@ -343,9 +343,9 @@ export class OrdersService {
   }
 
   async updateStatus(
-    orderId: number,
+    orderId: string,
     dto: UpdateOrderStatusDto,
-    actorId: number,
+    actorId: string,
   ) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -403,33 +403,33 @@ export class OrdersService {
 
   private async lockOrder(
     tx: Prisma.TransactionClient,
-    orderId: number,
-    userId?: number,
+    orderId: string,
+    userId?: string,
   ) {
     // READ COMMITTED gives each query after FOR UPDATE a fresh snapshot, so a
     // waiter can observe the payment or order state committed by a concurrent transaction.
     const rows =
       userId === undefined
         ? await tx.$queryRaw<
-            Array<{ id: number }>
-          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+            Array<{ id: string }>
+          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId}::uuid FOR UPDATE`
         : await tx.$queryRaw<
-            Array<{ id: number }>
-          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId} AND "userId" = ${userId} FOR UPDATE`;
+            Array<{ id: string }>
+          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
     if (!rows[0]) throw new NotFoundException('Order not found.');
   }
 
   private async cancelAndRestore(
     tx: Prisma.TransactionClient,
     order: {
-      id: number;
+      id: string;
       status: OrderStatus;
       paymentStatus: PaymentStatus;
-      items: Array<{ productId: number; quantity: number }>;
+      items: Array<{ productId: string; quantity: number }>;
     },
-    actorId: number,
+    actorId: string,
     ownerFilter: {
-      userId?: number;
+      userId?: string;
       status: OrderStatus;
       paymentStatus?: { not: PaymentStatus };
     },
@@ -496,8 +496,8 @@ export class OrdersService {
       });
     }
 
-    const items = [...order.items].sort(
-      (left, right) => left.productId - right.productId,
+    const items = [...order.items].sort((left, right) =>
+      left.productId.localeCompare(right.productId),
     );
     for (const item of items) {
       await this.stock.restoreForOrder(

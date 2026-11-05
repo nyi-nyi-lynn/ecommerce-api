@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import request from 'supertest';
 import { AuthController } from './auth.controller.js';
@@ -21,32 +21,40 @@ vi.mock('bcrypt', () => ({
 }));
 
 describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
+  const ROLE_ADMIN = '00000000-0000-4000-8000-000000000001';
+  const ROLE_CUSTOMER = '00000000-0000-4000-8000-000000000002';
+  const CUSTOMER_ID = '00000000-0000-4000-8000-000000000020';
+  const ADMIN_ID = '00000000-0000-4000-8000-000000000010';
+  const NEW_USER_ID = '00000000-0000-4000-8000-000000000030';
+  const CATEGORY_1 = '00000000-0000-4000-8000-000000000001';
+  const CATEGORY_2 = '00000000-0000-4000-8000-000000000002';
+
   let app: INestApplication;
   let prisma: any;
   let refreshRows: Map<string, any>;
   const customer = {
-    id: 20,
+    id: CUSTOMER_ID,
     name: 'HTTP Customer',
     email: 'customer@example.test',
     phone: null,
     passwordHash: 'hashed-password',
-    roleId: 2,
+    roleId: ROLE_CUSTOMER,
     role: { name: 'CUSTOMER' },
     isActive: true,
     createdAt: new Date('2025-01-01T00:00:00Z'),
   };
   const admin = {
     ...customer,
-    id: 10,
+    id: ADMIN_ID,
     name: 'HTTP Admin',
     email: 'admin@example.test',
-    roleId: 1,
+    roleId: ROLE_ADMIN,
     role: { name: 'ADMIN' },
   };
 
   beforeEach(async () => {
     refreshRows = new Map();
-    const findUser = (where: { id?: number; email?: string }) => {
+    const findUser = (where: { id?: string; email?: string }) => {
       if (where.id === admin.id || where.email === admin.email) return admin;
       if (where.id === customer.id || where.email === customer.email)
         return customer;
@@ -95,18 +103,16 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
       findMany: vi
         .fn()
         .mockResolvedValue([
-          { id: 1, name: 'Public', slug: 'public', isActive: true },
+          { id: CATEGORY_1, name: 'Public', slug: 'public', isActive: true },
         ]),
-      findFirst: vi
-        .fn()
-        .mockResolvedValue({
-          id: 1,
-          name: 'Public',
-          slug: 'public',
-          isActive: true,
-        }),
+      findFirst: vi.fn().mockResolvedValue({
+        id: CATEGORY_1,
+        name: 'Public',
+        slug: 'public',
+        isActive: true,
+      }),
       findUnique: vi.fn().mockResolvedValue(null),
-      create: vi.fn(async ({ data }) => ({ id: 2, ...data })),
+      create: vi.fn(async ({ data }) => ({ id: CATEGORY_2, ...data })),
       update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data })),
       delete: vi.fn(async ({ where }) => ({ id: where.id })),
     };
@@ -129,7 +135,7 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
           return found;
         }),
         create: vi.fn(async ({ data }) => ({
-          id: 30,
+          id: NEW_USER_ID,
           name: data.name,
           email: data.email,
           phone: data.phone ?? null,
@@ -138,7 +144,9 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
         })),
       },
       role: {
-        findUnique: vi.fn().mockResolvedValue({ id: 2, name: 'CUSTOMER' }),
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: ROLE_CUSTOMER, name: 'CUSTOMER' }),
       },
       refreshToken,
       category,
@@ -278,6 +286,22 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
       .expect(({ body }) => {
         expect(body.data.email).toBe(customer.email);
       });
+
+    const jwtService = app.get(JwtService);
+    prisma.user.findUnique.mockClear();
+    for (const invalidPayload of [
+      { sub: 20, email: customer.email, role: 'CUSTOMER' },
+      { email: customer.email, role: 'CUSTOMER' },
+      { sub: 'not-a-uuid', email: customer.email, role: 'CUSTOMER' },
+      { sub: { id: CUSTOMER_ID }, email: customer.email, role: 'CUSTOMER' },
+    ]) {
+      const invalidToken = await jwtService.signAsync(invalidPayload);
+      await request(app.getHttpServer())
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${invalidToken}`)
+        .expect(401);
+    }
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it('keeps category reads public and protects writes with database permissions', async () => {

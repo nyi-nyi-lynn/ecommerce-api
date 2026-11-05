@@ -10,13 +10,20 @@ import { ProductsController } from './products.controller.js';
 import { ProductsService } from './products.service.js';
 
 describe('Products HTTP', () => {
+  const USER_CUSTOMER = '00000000-0000-4000-8000-000000000001';
+  const USER_ADMIN = '00000000-0000-4000-8000-000000000002';
+  const CATEGORY_1 = '00000000-0000-4000-8000-000000000001';
+  const PRODUCT_1 = '00000000-0000-4000-8000-000000000001';
+  const PRODUCT_2 = '00000000-0000-4000-8000-000000000002';
+  const PRODUCT_9 = '00000000-0000-4000-8000-000000000009';
+
   let app: INestApplication;
   let prisma: any;
   let jwt: JwtService;
   let rows: any[];
   const product = {
-    id: 1,
-    categoryId: 1,
+    id: PRODUCT_1,
+    categoryId: CATEGORY_1,
     name: 'Tea',
     slug: 'tea',
     sku: 'TEA-1',
@@ -35,14 +42,14 @@ describe('Products HTTP', () => {
         findUnique: vi.fn(async ({ where }) => ({
           isActive: true,
           role: {
-            permissions: (where.id === 2
+            permissions: (where.id === USER_ADMIN
               ? ['product:create', 'product:update']
               : []
             ).map((code) => ({ permission: { code } })),
           },
         })),
       },
-      category: { findUnique: vi.fn().mockResolvedValue({ id: 1 }) },
+      category: { findUnique: vi.fn().mockResolvedValue({ id: CATEGORY_1 }) },
       product: {
         findFirst: vi.fn(
           async ({ where }) =>
@@ -70,7 +77,7 @@ describe('Products HTTP', () => {
         ),
         create: vi.fn(async ({ data }) => {
           const row = {
-            id: 2,
+            id: PRODUCT_2,
             ...data,
             price: String(data.price),
             isActive: true,
@@ -88,14 +95,17 @@ describe('Products HTTP', () => {
             .filter(
               (row) =>
                 row.isActive &&
-                where.id !== -1 &&
                 (!where.categoryId || row.categoryId === where.categoryId),
             )
             .slice(skip, skip + take),
         ),
         count: vi.fn(
           async ({ where }) =>
-            rows.filter((row) => row.isActive && where.id !== -1).length,
+            rows.filter(
+              (row) =>
+                row.isActive &&
+                (!where.categoryId || row.categoryId === where.categoryId),
+            ).length,
         ),
       },
     };
@@ -114,14 +124,14 @@ describe('Products HTTP', () => {
   });
   afterEach(async () => app.close());
 
-  const token = (id: number) =>
-    jwt.sign({ sub: id, role: id === 1 ? 'CUSTOMER' : 'ADMIN' });
+  const token = (id: string) =>
+    jwt.sign({ sub: id, role: id === USER_CUSTOMER ? 'CUSTOMER' : 'ADMIN' });
   const valid = {
     name: 'Coffee',
     slug: 'coffee',
     sku: 'COF-1',
     price: 4.25,
-    categoryId: 1,
+    categoryId: CATEGORY_1,
   };
 
   it('validates creation data and returns the standard success envelope', async () => {
@@ -131,13 +141,13 @@ describe('Products HTTP', () => {
       .expect(401);
     const bad = await request(app.getHttpServer())
       .post('/api/products')
-      .set('Authorization', `Bearer ${token(2)}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
       .send({ ...valid, price: 0 })
       .expect(400);
     expect(bad.body.success).toBe(false);
     const created = await request(app.getHttpServer())
       .post('/api/products')
-      .set('Authorization', `Bearer ${token(2)}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
       .send(valid)
       .expect(201);
     expect(created.body).toMatchObject({
@@ -150,33 +160,40 @@ describe('Products HTTP', () => {
   it('uses database permissions rather than JWT role claims for writes', async () => {
     await request(app.getHttpServer())
       .post('/api/products')
-      .set('Authorization', `Bearer ${token(1)}`)
+      .set('Authorization', `Bearer ${token(USER_CUSTOMER)}`)
       .send(valid)
       .expect(403);
     await request(app.getHttpServer())
-      .patch('/api/products/1')
-      .set('Authorization', `Bearer ${token(1)}`)
+      .patch(`/api/products/${PRODUCT_1}`)
+      .set('Authorization', `Bearer ${token(USER_CUSTOMER)}`)
       .send({ name: 'Changed' })
       .expect(403);
     await request(app.getHttpServer())
-      .patch('/api/products/1')
-      .set('Authorization', `Bearer ${token(2)}`)
+      .patch(`/api/products/${PRODUCT_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
       .send({ name: 'Changed' })
       .expect(200);
   });
 
   it('keeps inactive products private, even when public query asks for isActive=false', async () => {
-    rows = [product, { ...product, id: 9, slug: 'inactive', isActive: false }];
+    rows = [
+      product,
+      { ...product, id: PRODUCT_9, slug: 'inactive', isActive: false },
+    ];
     const list = await request(app.getHttpServer())
       .get('/api/products?isActive=false')
       .expect(200);
-    expect(list.body.data.items.map((item: any) => item.id)).toEqual([1]);
+    expect(list.body.data.items.map((item: any) => item.id)).toEqual([
+      PRODUCT_1,
+    ]);
     expect(list.body.data.pagination).toMatchObject({
       total: 1,
       page: 1,
       limit: 20,
     });
-    await request(app.getHttpServer()).get('/api/products/9').expect(404);
+    await request(app.getHttpServer())
+      .get(`/api/products/${PRODUCT_9}`)
+      .expect(404);
     await request(app.getHttpServer())
       .get('/api/products/slug/inactive')
       .expect(404);

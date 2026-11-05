@@ -1,22 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, Max, Min } from 'class-validator';
+import { IsInt, IsUUID, Max, Min } from 'class-validator';
 
 export const MAX_CART_INT = 2_147_483_647;
 
 export class AddCartItemDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_CART_INT)
+  @IsUUID()
   @ApiProperty({
-    description: 'Product ID.',
-    type: Number,
-    example: 1,
-    minimum: 1,
-    maximum: MAX_CART_INT,
+    description: 'Product UUID.',
+    type: String,
+    format: 'uuid',
+    example: '11111111-1111-4111-8111-111111111111',
   })
-  productId: number;
+  productId: string;
 
   @Type(() => Number)
   @IsInt()

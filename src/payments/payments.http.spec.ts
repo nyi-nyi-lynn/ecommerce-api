@@ -12,6 +12,13 @@ import {
 import { PaymentsService } from './payments.service.js';
 
 describe('Payments HTTP', () => {
+  const USER_1 = '00000000-0000-4000-8000-000000000001';
+  const USER_2 = '00000000-0000-4000-8000-000000000002';
+  const USER_11 = '00000000-0000-4000-8000-000000000011';
+  const ORDER_10 = '00000000-0000-4000-8000-000000000010';
+  const ATTEMPT_4 = '00000000-0000-4000-8000-000000000004';
+  const ATTEMPT_7 = '00000000-0000-4000-8000-000000000007';
+
   let app: INestApplication;
   let jwt: JwtService;
   let prisma: any;
@@ -22,7 +29,7 @@ describe('Payments HTTP', () => {
         findUnique: vi.fn(async ({ where }) => ({
           isActive: true,
           role: {
-            permissions: (where.id === 2
+            permissions: (where.id === USER_2
               ? ['payment:read', 'payment:update', 'payment:collect']
               : []
             ).map((code) => ({ permission: { code } })),
@@ -38,7 +45,7 @@ describe('Payments HTTP', () => {
         paymentAttempts: [],
       })),
       submitManualPayment: vi.fn(async (userId, orderId) => ({
-        id: 4,
+        id: ATTEMPT_4,
         orderId,
         userId,
         status: 'UNDER_REVIEW',
@@ -85,30 +92,33 @@ describe('Payments HTTP', () => {
     jwt = app.get(JwtService);
   });
   afterEach(async () => app.close());
-  const as = (id: number, role = 'CUSTOMER') => ({
+  const as = (id: string, role = 'CUSTOMER') => ({
     Authorization: `Bearer ${jwt.sign({ sub: id, role })}`,
   });
 
   it('requires JWT and derives customer ownership only from the JWT subject', async () => {
     await request(app.getHttpServer())
-      .get('/api/payments/orders/10')
+      .get(`/api/payments/orders/${ORDER_10}`)
       .expect(401);
     const response = await request(app.getHttpServer())
-      .get('/api/payments/orders/10')
-      .set(as(11))
+      .get(`/api/payments/orders/${ORDER_10}`)
+      .set(as(USER_11))
       .expect(200);
     expect(response.body).toMatchObject({
       success: true,
-      data: { id: 10, userId: 11 },
+      data: { id: ORDER_10, userId: USER_11 },
     });
-    expect(payments.getCustomerOrderPayments).toHaveBeenCalledWith(11, 10);
+    expect(payments.getCustomerOrderPayments).toHaveBeenCalledWith(
+      USER_11,
+      ORDER_10,
+    );
     await request(app.getHttpServer())
-      .post('/api/payments/orders/10/manual')
-      .set(as(11))
+      .post(`/api/payments/orders/${ORDER_10}/manual`)
+      .set(as(USER_11))
       .send({
         providerCode: 'KBZ_PAY',
         transactionReference: 'TX-1',
-        userId: 1,
+        userId: USER_1,
         amount: 1,
       })
       .expect(400);
@@ -116,8 +126,8 @@ describe('Payments HTTP', () => {
 
   it('validates manual payment fields and returns the shared success envelope', async () => {
     const response = await request(app.getHttpServer())
-      .post('/api/payments/orders/10/manual')
-      .set(as(11))
+      .post(`/api/payments/orders/${ORDER_10}/manual`)
+      .set(as(USER_11))
       .send({ providerCode: 'KBZ_PAY', transactionReference: 'TX-1' })
       .expect(201);
     expect(response.body).toMatchObject({
@@ -130,8 +140,8 @@ describe('Payments HTTP', () => {
       { providerCode: 'KBZ_PAY', transactionReference: 'X', amount: 1 },
     ])
       await request(app.getHttpServer())
-        .post('/api/payments/orders/10/manual')
-        .set(as(11))
+        .post(`/api/payments/orders/${ORDER_10}/manual`)
+        .set(as(USER_11))
         .send(body)
         .expect(400);
     expect(payments.submitManualPayment).toHaveBeenCalledTimes(1);
@@ -140,11 +150,11 @@ describe('Payments HTTP', () => {
   it('enforces the database-backed payment permissions rather than JWT role claims', async () => {
     await request(app.getHttpServer())
       .get('/api/admin/payments')
-      .set(as(1, 'ADMIN'))
+      .set(as(USER_1, 'ADMIN'))
       .expect(403);
     const list = await request(app.getHttpServer())
       .get('/api/admin/payments?page=2&limit=5&status=UNDER_REVIEW')
-      .set(as(2))
+      .set(as(USER_2))
       .expect(200);
     expect(list.body).toMatchObject({
       success: true,
@@ -154,20 +164,20 @@ describe('Payments HTTP', () => {
       expect.objectContaining({ page: 2, limit: 5, status: 'UNDER_REVIEW' }),
     );
     await request(app.getHttpServer())
-      .post('/api/admin/payments/7/approve')
-      .set(as(2))
+      .post(`/api/admin/payments/${ATTEMPT_7}/approve`)
+      .set(as(USER_2))
       .expect(201);
     await request(app.getHttpServer())
-      .post('/api/admin/payments/7/reject')
-      .set(as(2))
+      .post(`/api/admin/payments/${ATTEMPT_7}/reject`)
+      .set(as(USER_2))
       .send({ reason: 'Invalid reference' })
       .expect(201);
     await request(app.getHttpServer())
-      .post('/api/admin/payments/orders/10/collect-cod')
-      .set(as(2))
+      .post(`/api/admin/payments/orders/${ORDER_10}/collect-cod`)
+      .set(as(USER_2))
       .expect(201);
     expect(prisma.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 2 } }),
+      expect.objectContaining({ where: { id: USER_2 } }),
     );
   });
 });

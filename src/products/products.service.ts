@@ -29,7 +29,7 @@ export class ProductsService {
   async create(
     dto: CreateProductDto,
     image?: Express.Multer.File,
-    userId?: number,
+    userId?: string,
   ) {
     await this.ensureCategory(dto.categoryId);
     await this.ensureUnique(dto.sku.trim(), dto.slug.trim());
@@ -60,10 +60,10 @@ export class ProductsService {
   }
 
   async update(
-    id: number,
+    id: string,
     dto: UpdateProductDto,
     image?: Express.Multer.File,
-    userId?: number,
+    userId?: string,
   ) {
     const current = await this.prisma.product.findUnique({
       where: { id },
@@ -174,7 +174,7 @@ export class ProductsService {
     return buildPaginatedResponse(items, total, page, limit);
   }
 
-  async findOne(id: number) {
+  async findOne(id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, isActive: true },
     });
@@ -206,7 +206,7 @@ export class ProductsService {
     };
   }
 
-  private async ensureCategory(categoryId: number) {
+  private async ensureCategory(categoryId: string) {
     if (
       !(await this.prisma.category.findUnique({
         where: { id: categoryId },
@@ -219,7 +219,7 @@ export class ProductsService {
     }
   }
 
-  private async ensureUnique(sku?: string, slug?: string, excludeId?: number) {
+  private async ensureUnique(sku?: string, slug?: string, excludeId?: string) {
     if (!sku && !slug) return;
     const duplicate = await this.prisma.product.findFirst({
       where: {

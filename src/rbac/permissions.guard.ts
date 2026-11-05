@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PERMISSIONS_KEY } from './permissions.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
@@ -30,13 +31,13 @@ export class PermissionsGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<RbacRequest>();
     const userId = request.user?.sub;
-    if (!Number.isInteger(userId) || (userId as number) <= 0) {
+    if (typeof userId !== 'string' || !isUUID(userId)) {
       throw new UnauthorizedException('Authentication is required.');
     }
 
     if (!request.rbacPermissions) {
       const user = await this.prisma.user.findUnique({
-        where: { id: userId as number },
+        where: { id: userId },
         select: {
           isActive: true,
           role: {

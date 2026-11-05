@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { isUUID } from 'class-validator';
 import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface.js';
 import type { JwtPayload } from '../interfaces/jwt-payload.interface.js';
 
@@ -22,11 +23,18 @@ export class JwtAuthGuard implements CanActivate {
 
     const token = authHeader.slice(7);
 
+    let payload: JwtPayload;
     try {
-      request.user = await this.jwtService.verifyAsync<JwtPayload>(token);
-      return true;
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Invalid or expired access token');
     }
+
+    if (typeof payload?.sub !== 'string' || !isUUID(payload.sub)) {
+      throw new UnauthorizedException('Invalid or expired access token');
+    }
+
+    request.user = payload;
+    return true;
   }
 }

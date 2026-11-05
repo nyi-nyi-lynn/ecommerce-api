@@ -43,7 +43,7 @@ export class RbacService {
     }
   }
 
-  async updateRole(id: number, dto: UpdateRoleDto) {
+  async updateRole(id: string, dto: UpdateRoleDto) {
     try {
       return await this.prisma.role.update({
         where: { id },
@@ -63,7 +63,7 @@ export class RbacService {
     }
   }
 
-  async setPermissions(roleId: number, permissionIds: number[]) {
+  async setPermissions(roleId: string, permissionIds: string[]) {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockRolesForManagement(tx, [roleId]);
@@ -126,7 +126,7 @@ export class RbacService {
     );
   }
 
-  async assignUserRole(userId: number, roleId: number, actorId: number) {
+  async assignUserRole(userId: string, roleId: string, actorId: string) {
     return this.prisma.$transaction(
       async (tx) => {
         const targetInitial = await tx.user.findUnique({
@@ -202,13 +202,16 @@ export class RbacService {
    */
   private async lockRolesForManagement(
     tx: Prisma.TransactionClient,
-    targetRoleIds: number[],
+    targetRoleIds: string[],
   ) {
     if (typeof tx.$queryRaw !== 'function') return;
+    const sortedIds = [...new Set(targetRoleIds)].sort((a, b) =>
+      a.localeCompare(b),
+    );
     await tx.$queryRaw`
       SELECT r."id"
       FROM "Role" r
-      WHERE r."id" IN (${Prisma.join([...new Set(targetRoleIds)].sort((a, b) => a - b))})
+      WHERE r."id" IN (${Prisma.join(sortedIds.map((id) => Prisma.sql`${id}::uuid`))})
          OR EXISTS (
            SELECT 1
            FROM "RolePermission" rp

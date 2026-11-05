@@ -6,6 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isUUID } from 'class-validator';
 import {
   OrderStatus,
   PaymentMethod,
@@ -21,7 +22,6 @@ import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { RejectPaymentDto } from './dto/reject-payment.dto.js';
 import { SubmitManualPaymentDto } from './dto/submit-manual-payment.dto.js';
 
-const MAX_ID = 2_147_483_647;
 const attemptSelect = {
   id: true,
   orderId: true,
@@ -57,7 +57,7 @@ export class PaymentsService {
     private readonly config: ConfigService,
   ) {}
 
-  async getCustomerOrderPayments(userId: number, orderId: number) {
+  async getCustomerOrderPayments(userId: string, orderId: string) {
     this.validateId(orderId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, userId },
@@ -91,8 +91,8 @@ export class PaymentsService {
   }
 
   async submitManualPayment(
-    userId: number,
-    orderId: number,
+    userId: string,
+    orderId: string,
     dto: SubmitManualPaymentDto,
   ) {
     this.validateId(orderId);
@@ -203,7 +203,7 @@ export class PaymentsService {
     return buildPaginatedResponse(items, total, page, limit);
   }
 
-  async getAttempt(attemptId: number) {
+  async getAttempt(attemptId: string) {
     this.validateId(attemptId);
     const attempt = await this.prisma.paymentAttempt.findUnique({
       where: { id: attemptId },
@@ -229,7 +229,7 @@ export class PaymentsService {
     return attempt;
   }
 
-  async approveManualPayment(attemptId: number, actorId: number) {
+  async approveManualPayment(attemptId: string, actorId: string) {
     this.validateId(attemptId);
     return this.prisma.$transaction(
       async (tx) => {
@@ -319,8 +319,8 @@ export class PaymentsService {
   }
 
   async rejectManualPayment(
-    attemptId: number,
-    actorId: number,
+    attemptId: string,
+    actorId: string,
     dto: RejectPaymentDto,
   ) {
     this.validateId(attemptId);
@@ -382,7 +382,7 @@ export class PaymentsService {
     );
   }
 
-  async collectCod(orderId: number, actorId: number) {
+  async collectCod(orderId: string, actorId: string) {
     this.validateId(orderId);
     return this.prisma.$transaction(
       async (tx) => {
@@ -454,24 +454,24 @@ export class PaymentsService {
 
   private async lockOrder(
     tx: Prisma.TransactionClient,
-    orderId: number,
-    userId?: number,
+    orderId: string,
+    userId?: string,
   ) {
     // READ COMMITTED gives each query after FOR UPDATE a fresh snapshot, so a
     // waiter can observe the payment state committed by the transaction ahead.
     const rows =
       userId === undefined
         ? await tx.$queryRaw<
-            Array<{ id: number }>
-          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+            Array<{ id: string }>
+          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId}::uuid FOR UPDATE`
         : await tx.$queryRaw<
-            Array<{ id: number }>
-          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId} AND "userId" = ${userId} FOR UPDATE`;
+            Array<{ id: string }>
+          >`SELECT "id" FROM "Order" WHERE "id" = ${orderId}::uuid AND "userId" = ${userId}::uuid FOR UPDATE`;
     if (!rows[0]) throw new NotFoundException('Order not found.');
   }
 
-  private validateId(id: number) {
-    if (!Number.isInteger(id) || id < 1 || id > MAX_ID)
+  private validateId(id: string) {
+    if (typeof id !== 'string' || !isUUID(id))
       throw new BadRequestException('A valid ID is required.');
   }
 

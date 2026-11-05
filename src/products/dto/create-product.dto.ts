@@ -1,12 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -57,16 +57,13 @@ export class CreateProductDto {
   })
   price: number;
   @ApiProperty({
-    description: 'Existing category numeric ID.',
-    type: Number,
-    example: 1,
-    minimum: 1,
-    maximum: 2147483647,
+    description: 'Existing category UUID.',
+    type: String,
+    format: 'uuid',
+    example: '11111111-1111-4111-8111-111111111111',
   })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  categoryId: number;
+  @IsUUID()
+  categoryId: string;
   @IsOptional()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(2048)

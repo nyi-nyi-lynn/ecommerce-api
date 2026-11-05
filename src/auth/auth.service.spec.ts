@@ -10,13 +10,14 @@ vi.mock('bcrypt', () => ({
 }));
 
 describe('AuthService refresh sessions', () => {
+  const roleId = '00000000-0000-4000-8000-000000000002';
   const user = {
-    id: 7,
+    id: '00000000-0000-4000-8000-000000000007',
     name: 'Test Customer',
     email: 'customer@example.test',
     phone: null,
     passwordHash: '$2b$12$hash',
-    roleId: 2,
+    roleId,
     role: { name: 'CUSTOMER' },
     isActive: true,
     createdAt: new Date('2025-01-01T00:00:00Z'),
@@ -29,17 +30,15 @@ describe('AuthService refresh sessions', () => {
     stored = [];
     prisma = {
       role: {
-        findUnique: vi.fn().mockResolvedValue({ id: 2, name: 'CUSTOMER' }),
+        findUnique: vi.fn().mockResolvedValue({ id: roleId, name: 'CUSTOMER' }),
       },
       user: {
         findUnique: vi.fn().mockResolvedValue(user),
-        create: vi
-          .fn()
-          .mockResolvedValue({
-            ...user,
-            passwordHash: undefined,
-            createdAt: user.createdAt,
-          }),
+        create: vi.fn().mockResolvedValue({
+          ...user,
+          passwordHash: undefined,
+          createdAt: user.createdAt,
+        }),
       },
       refreshToken: {
         create: vi.fn(async ({ data }) => {
@@ -92,7 +91,7 @@ describe('AuthService refresh sessions', () => {
       user: { role: 'CUSTOMER' },
     });
     expect(result.refreshToken).toMatch(/^[0-9a-f-]+\.[A-Za-z0-9_-]{43}$/i);
-    expect(prisma.user.create.mock.calls[0][0].data.roleId).toBe(2);
+    expect(prisma.user.create.mock.calls[0][0].data.roleId).toBe(roleId);
     expect(stored).toHaveLength(1);
     expect(JSON.stringify(stored)).not.toContain(result.refreshToken);
     expect(stored[0].tokenHash).toHaveLength(64);

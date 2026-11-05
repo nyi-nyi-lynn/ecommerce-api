@@ -5,17 +5,17 @@ import {
 import { seedData } from './seed.js';
 
 type MemoryState = {
-  roles: Map<string, { id: number; name: string }>;
-  permissions: Map<string, { id: number; code: string }>;
+  roles: Map<string, { id: string; name: string }>;
+  permissions: Map<string, { id: string; code: string }>;
   rolePermissionLinks: Set<string>;
   users: Map<
     string,
-    { id: number; email: string; roleName: string; passwordHash: string }
+    { id: string; email: string; roleName: string; passwordHash: string }
   >;
   categories: Map<
     string,
     {
-      id: number;
+      id: string;
       name: string;
       slug: string;
       description: string | null;
@@ -27,32 +27,32 @@ type MemoryState = {
   products: Map<
     string,
     {
-      id: number;
+      id: string;
       name: string;
       slug: string;
       sku: string;
-      categoryId: number;
+      categoryId: string;
       isActive: boolean;
       imageUrl: null;
       imagePublicId: null;
       price: unknown;
     }
   >;
-  stocks: Map<number, { productId: number; quantity: number }>;
+  stocks: Map<string, { productId: string; quantity: number }>;
   movements: Array<{
-    id: number;
-    productId: number;
-    userId: number;
+    id: string;
+    productId: string;
+    userId: string;
     type: StockMovementType;
     quantity: number;
     quantityBefore: number;
     quantityAfter: number;
     note: string | null;
   }>;
-  carts: Map<number, { id: number; userId: number }>;
+  carts: Map<string, { id: string; userId: string }>;
   cartItems: Map<
     string,
-    { cartId: number; productId: number; quantity: number }
+    { cartId: string; productId: string; quantity: number }
   >;
   nextId: number;
 };
@@ -71,7 +71,8 @@ function createMemoryPrisma() {
     cartItems: new Map(),
     nextId: 1,
   };
-  const nextId = () => state.nextId++;
+  const nextId = () =>
+    `00000000-0000-4000-8000-${String(state.nextId++).padStart(12, '0')}`;
   const tx = {
     role: {
       upsert: async ({
@@ -110,18 +111,18 @@ function createMemoryPrisma() {
         where,
       }: {
         where: {
-          roleId_permissionId: { roleId: number; permissionId: number };
+          roleId_permissionId: { roleId: string; permissionId: string };
         };
       }) => {
         const { roleId, permissionId } = where.roleId_permissionId;
-        state.rolePermissionLinks.add(`${roleId}:${permissionId}`);
+        state.rolePermissionLinks.add(`${roleId}|${permissionId}`);
         return { roleId, permissionId };
       },
-      findMany: async ({ where }: { where: { roleId: number } }) => {
+      findMany: async ({ where }: { where: { roleId: string } }) => {
         return [...state.rolePermissionLinks]
-          .filter((key) => Number(key.split(':')[0]) === where.roleId)
+          .filter((key) => key.split('|')[0] === where.roleId)
           .map((key) => {
-            const permissionId = Number(key.split(':')[1]);
+            const permissionId = key.split('|')[1];
             const permission = [...state.permissions.values()].find(
               (row) => row.id === permissionId,
             );
@@ -141,7 +142,7 @@ function createMemoryPrisma() {
           name: string;
           email: string;
           passwordHash: string;
-          roleId: number;
+          roleId: string;
         };
       }) => {
         const roleName = [...state.roles.values()].find(
@@ -209,12 +210,12 @@ function createMemoryPrisma() {
       },
     },
     stock: {
-      findUnique: async ({ where }: { where: { productId: number } }) =>
+      findUnique: async ({ where }: { where: { productId: string } }) =>
         state.stocks.get(where.productId) ?? null,
       create: async ({
         data,
       }: {
-        data: { productId: number; quantity: number };
+        data: { productId: string; quantity: number };
       }) => {
         if (state.stocks.has(data.productId)) throw { code: 'P2002' };
         const row = { ...data };
@@ -226,7 +227,7 @@ function createMemoryPrisma() {
       findFirst: async ({
         where,
       }: {
-        where: { productId: number; type: StockMovementType };
+        where: { productId: string; type: StockMovementType };
       }) => {
         const row = state.movements.find(
           (movement) =>
@@ -257,8 +258,8 @@ function createMemoryPrisma() {
         where,
         create,
       }: {
-        where: { userId: number };
-        create: { userId: number };
+        where: { userId: string };
+        create: { userId: string };
       }) => {
         let row = state.carts.get(where.userId);
         if (!row) {
@@ -273,11 +274,11 @@ function createMemoryPrisma() {
         where,
         create,
       }: {
-        where: { cartId_productId: { cartId: number; productId: number } };
-        create: { cartId: number; productId: number; quantity: number };
+        where: { cartId_productId: { cartId: string; productId: string } };
+        create: { cartId: string; productId: string; quantity: number };
       }) => {
         const { cartId, productId } = where.cartId_productId;
-        const key = `${cartId}:${productId}`;
+        const key = `${cartId}|${productId}`;
         let row = state.cartItems.get(key);
         if (!row) {
           row = { ...create };
@@ -321,12 +322,12 @@ describe('development seed', () => {
     expect(adminRoleId).toBeDefined();
     expect(
       [...state.rolePermissionLinks].every(
-        (link) => Number(link.split(':')[0]) === adminRoleId,
+        (link) => link.split('|')[0] === adminRoleId,
       ),
     ).toBe(true);
     expect(state.categories.size).toBe(10);
     expect(state.products.size).toBe(20);
-    const productsPerCategory = new Map<number, number>();
+    const productsPerCategory = new Map<string, number>();
     for (const product of state.products.values()) {
       productsPerCategory.set(
         product.categoryId,
@@ -366,8 +367,10 @@ describe('development seed', () => {
     expect(
       state.movements
         .map((movement) => movement.productId)
-        .sort((left, right) => left - right),
-    ).toEqual([...state.stocks.keys()].sort((left, right) => left - right));
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(
+      [...state.stocks.keys()].sort((left, right) => left.localeCompare(right)),
+    );
     expect(
       [...state.cartItems.values()].every(
         (item) =>

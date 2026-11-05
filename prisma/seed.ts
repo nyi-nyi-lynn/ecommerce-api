@@ -390,7 +390,7 @@ export async function seedData(
 
   return prisma.$transaction(
     async (tx) => {
-      const roles = new Map<string, { id: number }>();
+      const roles = new Map<string, { id: string }>();
       for (const [name, description] of [
         ['ADMIN', 'Administrator role'],
         ['CUSTOMER', 'Customer role'],
@@ -440,7 +440,7 @@ export async function seedData(
         );
       }
 
-      const userIds = new Map<string, number>();
+      const userIds = new Map<string, string>();
       for (const definition of userDefinitions) {
         const expectedRole = roles.get(definition.role);
         if (!expectedRole)
@@ -478,7 +478,7 @@ export async function seedData(
         userIds.set(definition.email, user.id);
       }
 
-      const categoryIds = new Map<string, number>();
+      const categoryIds = new Map<string, string>();
       for (const definition of categoryDefinitions) {
         let category;
         try {
@@ -515,7 +515,7 @@ export async function seedData(
         categoryIds.set(definition.slug, category.id);
       }
 
-      const productIds = new Map<string, number>();
+      const productIds = new Map<string, string>();
       for (const definition of productDefinitions) {
         const categoryId = categoryIds.get(definition.category);
         if (!categoryId)

@@ -7,6 +7,8 @@ import {
 import { UploadsService } from './uploads.service.js';
 
 describe('UploadsService', () => {
+  const USER_ID = '00000000-0000-4000-8000-000000000007';
+
   let configValues: Record<string, string>;
   let cloudinary: any;
   let service: UploadsService;
@@ -27,7 +29,7 @@ describe('UploadsService', () => {
             callback(null, {
               secure_url:
                 'https://res.cloudinary.com/demo/image/upload/test.jpg',
-              public_id: 'ecommerce/products/users/7/test',
+              public_id: `ecommerce/products/users/${USER_ID}/test`,
               format: 'jpg',
               width: 800,
               height: 600,
@@ -60,9 +62,11 @@ describe('UploadsService', () => {
   });
 
   it('uploads a valid image and returns only required asset metadata', async () => {
-    await expect(service.uploadProductImage(imageFile(), 7)).resolves.toEqual({
+    await expect(
+      service.uploadProductImage(imageFile(), USER_ID),
+    ).resolves.toEqual({
       secure_url: 'https://res.cloudinary.com/demo/image/upload/test.jpg',
-      public_id: 'ecommerce/products/users/7/test',
+      public_id: `ecommerce/products/users/${USER_ID}/test`,
       format: 'jpg',
       width: 800,
       height: 600,
@@ -72,16 +76,16 @@ describe('UploadsService', () => {
 
   it('rejects missing and empty files', async () => {
     await expect(
-      service.uploadProductImage(undefined, 7),
+      service.uploadProductImage(undefined, USER_ID),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
-      service.uploadProductImage({ ...imageFile(), size: 0 }, 7),
+      service.uploadProductImage({ ...imageFile(), size: 0 }, USER_ID),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects oversized files', async () => {
     await expect(
-      service.uploadProductImage(imageFile(5 * 1024 * 1024 + 1), 7),
+      service.uploadProductImage(imageFile(5 * 1024 * 1024 + 1), USER_ID),
     ).rejects.toBeInstanceOf(PayloadTooLargeException);
   });
 
@@ -91,9 +95,9 @@ describe('UploadsService', () => {
       buffer: Buffer.from('<script>alert(1)</script>'),
       mimetype: 'image/png',
     };
-    await expect(service.uploadProductImage(file, 7)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.uploadProductImage(file, USER_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('maps Cloudinary failures to a safe service unavailable response', async () => {
@@ -103,33 +107,35 @@ describe('UploadsService', () => {
       }),
     );
     await expect(
-      service.uploadProductImage(imageFile(), 7),
+      service.uploadProductImage(imageFile(), USER_ID),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('fails safely when Cloudinary credentials are missing', async () => {
     configValues = {};
     await expect(
-      service.uploadProductImage(imageFile(), 7),
+      service.uploadProductImage(imageFile(), USER_ID),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('1. deletes user-scoped product images', async () => {
     await expect(
-      service.deleteProductImage('ecommerce/products/users/7/image'),
+      service.deleteProductImage(`ecommerce/products/users/${USER_ID}/image`),
     ).resolves.toBe(true);
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
-      'ecommerce/products/users/7/image',
+      `ecommerce/products/users/${USER_ID}/image`,
       { resource_type: 'image', invalidate: true },
     );
   });
 
   it('2. deletes user-scoped category images', async () => {
     await expect(
-      service.deleteCategoryImage('ecommerce/categories/users/7/image'),
+      service.deleteCategoryImage(
+        `ecommerce/categories/users/${USER_ID}/image`,
+      ),
     ).resolves.toBe(true);
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
-      'ecommerce/categories/users/7/image',
+      `ecommerce/categories/users/${USER_ID}/image`,
       { resource_type: 'image', invalidate: true },
     );
   });
@@ -146,13 +152,13 @@ describe('UploadsService', () => {
 
   it('4. rejects cross-resource folder deletion between products and categories', async () => {
     await expect(
-      service.deleteProductImage('ecommerce/categories/users/7/image'),
+      service.deleteProductImage(`ecommerce/categories/users/${USER_ID}/image`),
     ).resolves.toBe(false);
     await expect(
       service.deleteProductImage('ecommerce/categories/unscoped'),
     ).resolves.toBe(false);
     await expect(
-      service.deleteCategoryImage('ecommerce/products/users/7/image'),
+      service.deleteCategoryImage(`ecommerce/products/users/${USER_ID}/image`),
     ).resolves.toBe(false);
     await expect(
       service.deleteCategoryImage('ecommerce/products/unscoped'),
@@ -167,10 +173,10 @@ describe('UploadsService', () => {
       'other/folder/image',
       'ecommerce/products/',
       'ecommerce/categories/',
-      'ecommerce/products/users/7/',
+      `ecommerce/products/users/${USER_ID}/`,
       'ecommerce/products/users//image',
       'ecommerce/products/../categories/image',
-      'ecommerce/categories/users/7/../../products/image',
+      `ecommerce/categories/users/${USER_ID}/../../products/image`,
     ]) {
       await expect(
         service.deleteProductImage(invalidPublicId),
@@ -187,14 +193,16 @@ describe('UploadsService', () => {
       new Error('Cloudinary network error'),
     );
     await expect(
-      service.deleteProductImage('ecommerce/products/users/7/image'),
+      service.deleteProductImage(`ecommerce/products/users/${USER_ID}/image`),
     ).resolves.toBe(false);
 
     cloudinary.uploader.destroy.mockRejectedValueOnce(
       new Error('Cloudinary network error'),
     );
     await expect(
-      service.deleteCategoryImage('ecommerce/categories/users/7/image'),
+      service.deleteCategoryImage(
+        `ecommerce/categories/users/${USER_ID}/image`,
+      ),
     ).resolves.toBe(false);
   });
 
@@ -205,7 +213,7 @@ describe('UploadsService', () => {
           callback(null, {
             secure_url:
               'https://res.cloudinary.com/demo/image/upload/category.jpg',
-            public_id: 'ecommerce/categories/users/7/category',
+            public_id: `ecommerce/categories/users/${USER_ID}/category`,
             format: 'jpg',
             width: 800,
             height: 600,
@@ -215,12 +223,14 @@ describe('UploadsService', () => {
     );
 
     await expect(
-      service.uploadCategoryImage(imageFile(), 7),
+      service.uploadCategoryImage(imageFile(), USER_ID),
     ).resolves.toMatchObject({
-      public_id: 'ecommerce/categories/users/7/category',
+      public_id: `ecommerce/categories/users/${USER_ID}/category`,
     });
     expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
-      expect.objectContaining({ folder: 'ecommerce/categories/users/7' }),
+      expect.objectContaining({
+        folder: `ecommerce/categories/users/${USER_ID}`,
+      }),
       expect.any(Function),
     );
   });

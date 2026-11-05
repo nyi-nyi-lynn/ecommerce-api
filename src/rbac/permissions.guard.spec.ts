@@ -25,6 +25,7 @@ function makeContext(user: { sub?: unknown } | undefined): ExecutionContext {
 }
 
 describe('PermissionsGuard', () => {
+  const userId = '00000000-0000-4000-8000-000000000010';
   const prisma = {
     user: { findUnique: vi.fn() },
   };
@@ -45,9 +46,9 @@ describe('PermissionsGuard', () => {
         ],
       },
     });
-    await expect(guard.canActivate(makeContext({ sub: 10 }))).resolves.toBe(
-      true,
-    );
+    await expect(
+      guard.canActivate(makeContext({ sub: userId })),
+    ).resolves.toBe(true);
   });
 
   it('denies when the database role lacks any required permission', async () => {
@@ -56,7 +57,7 @@ describe('PermissionsGuard', () => {
       role: { permissions: [{ permission: { code: 'category:create' } }] },
     });
     await expect(
-      guard.canActivate(makeContext({ sub: 10 })),
+      guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -73,11 +74,11 @@ describe('PermissionsGuard', () => {
         },
       });
     await expect(
-      guard.canActivate(makeContext({ sub: 10 })),
+      guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(guard.canActivate(makeContext({ sub: 10 }))).resolves.toBe(
-      true,
-    );
+    await expect(
+      guard.canActivate(makeContext({ sub: userId })),
+    ).resolves.toBe(true);
   });
 
   it('returns 401 for a missing identity and denies deleted or inactive users', async () => {
@@ -88,10 +89,10 @@ describe('PermissionsGuard', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ isActive: false, role: null });
     await expect(
-      guard.canActivate(makeContext({ sub: 10 })),
+      guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);
     await expect(
-      guard.canActivate(makeContext({ sub: 10 })),
+      guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

@@ -31,7 +31,7 @@ export class UploadsService {
 
   async uploadProductImage(
     file: Express.Multer.File | undefined,
-    userId?: number,
+    userId?: string,
     resourceFolder = userId === undefined
       ? PRODUCT_IMAGE_FOLDER
       : `${PRODUCT_IMAGE_FOLDER}/users/${userId}`,
@@ -41,7 +41,7 @@ export class UploadsService {
 
   async uploadCategoryImage(
     file: Express.Multer.File | undefined,
-    userId?: number,
+    userId?: string,
   ) {
     return this.uploadImage(
       file,

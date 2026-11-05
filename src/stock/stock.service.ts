@@ -19,9 +19,9 @@ export class StockService {
   constructor(private readonly prisma: PrismaService) {}
 
   async initialize(
-    productId: number,
+    productId: string,
     dto: InitializeStockDto,
-    actorId: number,
+    actorId: string,
   ) {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -63,7 +63,7 @@ export class StockService {
     }
   }
 
-  async adjust(productId: number, dto: AdjustStockDto, actorId: number) {
+  async adjust(productId: string, dto: AdjustStockDto, actorId: string) {
     return this.prisma.$transaction(async (tx) => {
       const product = await tx.product.findUnique({
         where: { id: productId },
@@ -102,10 +102,10 @@ export class StockService {
   /** Consume on-hand stock for an order inside the caller's transaction. */
   async consumeForOrder(
     tx: Prisma.TransactionClient,
-    productId: number,
+    productId: string,
     quantity: number,
-    actorId: number,
-    orderId: number,
+    actorId: string,
+    orderId: string,
   ) {
     const change = -quantity;
     const result = await this.changeQuantity(tx, productId, change);
@@ -129,10 +129,10 @@ export class StockService {
   /** Restore a cancelled order inside the caller's transaction. */
   async restoreForOrder(
     tx: Prisma.TransactionClient,
-    productId: number,
+    productId: string,
     quantity: number,
-    actorId: number,
-    orderId: number,
+    actorId: string,
+    orderId: string,
   ) {
     const result = await this.changeQuantity(tx, productId, quantity);
     if (!result) {
@@ -154,7 +154,7 @@ export class StockService {
 
   private async changeQuantity(
     tx: Prisma.TransactionClient,
-    productId: number,
+    productId: string,
     quantityChange: number,
   ) {
     // Only positive changes consume headroom below INT4_MAX. Keep the bound in
@@ -169,7 +169,7 @@ export class StockService {
       UPDATE "stocks"
       SET "quantity" = "quantity" + ${quantityChange},
           "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "productId" = ${productId}
+      WHERE "productId" = ${productId}::uuid
         AND "quantity" >= "reservedQuantity"
         AND (
           (${quantityChange} > 0 AND "quantity" <= ${maxQuantityBeforeIncrease})
@@ -186,9 +186,9 @@ export class StockService {
   private createMovement(
     tx: Prisma.TransactionClient,
     data: {
-      productId: number;
-      orderId?: number;
-      userId: number;
+      productId: string;
+      orderId?: string;
+      userId: string;
       type: StockMovementType;
       quantity: number;
       quantityBefore: number;
@@ -199,7 +199,7 @@ export class StockService {
     return tx.stockMovement.create({ data });
   }
 
-  async getStock(productId: number) {
+  async getStock(productId: string) {
     const product = await this.prisma.product.findFirst({
       where: { id: productId, isActive: true },
       select: {
@@ -227,7 +227,7 @@ export class StockService {
     };
   }
 
-  async getMovements(productId: number, query: QueryStockMovementsDto) {
+  async getMovements(productId: string, query: QueryStockMovementsDto) {
     if (
       !(await this.prisma.product.findUnique({
         where: { id: productId },

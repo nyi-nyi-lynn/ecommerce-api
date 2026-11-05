@@ -6,6 +6,7 @@ import {
   ArrayUnique,
   IsArray,
   IsInt,
+  IsUUID,
   Max,
   Min,
   ValidateNested,
@@ -13,22 +14,17 @@ import {
 import { CheckoutOrderDto } from './checkout-order.dto.js';
 
 export const MAX_ORDER_ITEMS = 50;
-export const MAX_ORDER_PRODUCT_ID = 2_147_483_647;
 export const MAX_ORDER_QUANTITY = 2_147_483_647;
 
 export class CreateOrderItemDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(MAX_ORDER_PRODUCT_ID)
+  @IsUUID()
   @ApiProperty({
-    description: 'Product ID for this order line.',
-    type: Number,
-    example: 42,
-    minimum: 1,
-    maximum: MAX_ORDER_PRODUCT_ID,
+    description: 'Product UUID for this order line.',
+    type: String,
+    format: 'uuid',
+    example: '11111111-1111-4111-8111-111111111111',
   })
-  productId: number;
+  productId: string;
 
   @Type(() => Number)
   @IsInt()
@@ -57,7 +53,9 @@ export class CreateOrderDto extends CheckoutOrderDto {
     type: [CreateOrderItemDto],
     minItems: 1,
     maxItems: MAX_ORDER_ITEMS,
-    example: [{ productId: 42, quantity: 2 }],
+    example: [
+      { productId: '11111111-1111-4111-8111-111111111111', quantity: 2 },
+    ],
   })
   items: CreateOrderItemDto[];
 }

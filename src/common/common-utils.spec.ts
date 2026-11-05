@@ -21,6 +21,9 @@ import { hasPrismaErrorCode } from './prisma/prisma-error.util.js';
 import { transformBooleanValue } from './transformers/transform-boolean.decorator.js';
 
 describe('Shared Utilities & Refactored DTOs', () => {
+  const USER_ID = '00000000-0000-4000-8000-000000000042';
+  const PRODUCT_ID = '00000000-0000-4000-8000-000000000005';
+
   describe('hasPrismaErrorCode', () => {
     it('returns true only when the error is an object with a matching code', () => {
       expect(hasPrismaErrorCode({ code: 'P2002' }, 'P2002')).toBe(true);
@@ -116,7 +119,7 @@ describe('Shared Utilities & Refactored DTOs', () => {
   describe('@CurrentUser() extractor', () => {
     it('extracts the full user or a requested JwtPayload property from the request', () => {
       const user: JwtPayload = {
-        sub: 42,
+        sub: USER_ID,
         email: 'user@example.com',
         role: 'CUSTOMER',
       };
@@ -127,7 +130,7 @@ describe('Shared Utilities & Refactored DTOs', () => {
       } as unknown as ExecutionContext;
 
       expect(extractCurrentUser(undefined, ctx)).toEqual(user);
-      expect(extractCurrentUser('sub', ctx)).toBe(42);
+      expect(extractCurrentUser('sub', ctx)).toBe(USER_ID);
       expect(extractCurrentUser('email', ctx)).toBe('user@example.com');
       expect(extractCurrentUser('role', ctx)).toBe('CUSTOMER');
     });
@@ -136,7 +139,7 @@ describe('Shared Utilities & Refactored DTOs', () => {
   describe('CreateOrderDto inheritance from CheckoutOrderDto', () => {
     it('preserves shipping field trimming, validation, and items array validation', () => {
       const valid = plainToInstance(CreateOrderDto, {
-        items: [{ productId: 5, quantity: 2 }],
+        items: [{ productId: PRODUCT_ID, quantity: 2 }],
         paymentMethod: 'MANUAL',
         shippingName: '  Ada Lovelace  ',
         shippingPhone: '  0912345678  ',
@@ -170,4 +173,3 @@ describe('Shared Utilities & Refactored DTOs', () => {
     });
   });
 });
-

@@ -46,37 +46,37 @@ enum StockMovementType {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name         String   @db.VarChar(100)
   email        String   @unique @db.VarChar(255)
   phone        String?  @unique @db.VarChar(30)
   passwordHash String
-  roleId       Int
+  roleId       String   @db.Uuid
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  cart           Cart?
-  orders         Order[]
-  stockMovements StockMovement[]
-  refreshTokens  RefreshToken[]
+  cart                    Cart?
+  orders                  Order[]
+  stockMovements          StockMovement[]
+  refreshTokens           RefreshToken[]
   paymentAttemptsReviewed PaymentAttempt[] @relation("PaymentAttemptReviewer")
-  paymentEvents PaymentEvent[] @relation("PaymentEventActor")
-  role           Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  paymentEvents           PaymentEvent[]   @relation("PaymentEventActor")
+  role                    Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
 }
 
 model RefreshToken {
-  id                 String        @id @db.Uuid
-  userId             Int
-  familyId           String        @db.Uuid
-  tokenHash          String        @unique @db.Char(64)
-  expiresAt           DateTime      @db.Timestamp(3)
-  createdAt           DateTime      @default(now()) @db.Timestamp(3)
-  revokedAt           DateTime?     @db.Timestamp(3)
-  replacedByTokenId   String?       @db.Uuid
-  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  replacedBy          RefreshToken? @relation("RefreshTokenRotation", fields: [replacedByTokenId], references: [id], onDelete: SetNull)
-  replaces            RefreshToken[] @relation("RefreshTokenRotation")
+  id                String          @id @db.Uuid
+  userId            String          @db.Uuid
+  familyId          String          @db.Uuid
+  tokenHash         String          @unique @db.Char(64)
+  expiresAt         DateTime        @db.Timestamp(3)
+  createdAt         DateTime        @default(now()) @db.Timestamp(3)
+  revokedAt         DateTime?       @db.Timestamp(3)
+  replacedByTokenId String?         @db.Uuid
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy        RefreshToken?   @relation("RefreshTokenRotation", fields: [replacedByTokenId], references: [id], onDelete: SetNull)
+  replaces          RefreshToken[]  @relation("RefreshTokenRotation")
 
   @@index([userId])
   @@index([userId, familyId])
@@ -85,7 +85,7 @@ model RefreshToken {
 }
 
 model Role {
-  id          Int              @id @default(autoincrement())
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String           @unique @db.VarChar(100)
   description String?
   createdAt   DateTime         @default(now())
@@ -95,15 +95,15 @@ model Role {
 }
 
 model Permission {
-  id          Int              @id @default(autoincrement())
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code        String           @unique @db.VarChar(120)
   description String?
   roleLinks   RolePermission[]
 }
 
 model RolePermission {
-  roleId       Int
-  permissionId Int
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
   role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
@@ -112,32 +112,32 @@ model RolePermission {
 }
 
 model Category {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique @db.VarChar(100)
-  slug        String   @unique @db.VarChar(120)
-  description String?
-  imageUrl    String?
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String   @unique @db.VarChar(100)
+  slug          String   @unique @db.VarChar(120)
+  description   String?
+  imageUrl      String?
   imagePublicId String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   products Product[]
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  categoryId  Int
-  name        String   @db.VarChar(200)
-  slug        String   @unique @db.VarChar(220)
-  description String?
-  sku         String   @unique @db.VarChar(100)
-  price       Decimal  @db.Decimal(12, 2)
-  imageUrl    String?
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  categoryId    String   @db.Uuid
+  name          String   @db.VarChar(200)
+  slug          String   @unique @db.VarChar(220)
+  description   String?
+  sku           String   @unique @db.VarChar(100)
+  price         Decimal  @db.Decimal(12, 2)
+  imageUrl      String?
   imagePublicId String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   category       Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   stock          Stock?
@@ -150,7 +150,7 @@ model Product {
 }
 
 model Stock {
-  productId        Int      @id
+  productId        String   @id @db.Uuid
   quantity         Int      @default(0)
   reservedQuantity Int      @default(0)
   createdAt        DateTime @default(now())
@@ -162,16 +162,16 @@ model Stock {
 }
 
 model StockMovement {
-  id        Int               @id @default(autoincrement())
-  productId Int
-  orderId   Int?
-  userId    Int?
-  type      StockMovementType
-  quantity  Int
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  productId      String            @db.Uuid
+  orderId        String?           @db.Uuid
+  userId         String?           @db.Uuid
+  type           StockMovementType
+  quantity       Int
   quantityBefore Int?
   quantityAfter  Int?
-  note      String?
-  createdAt DateTime          @default(now())
+  note           String?
+  createdAt      DateTime          @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
   order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
@@ -183,8 +183,8 @@ model StockMovement {
 }
 
 model Cart {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @unique @db.Uuid
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -193,9 +193,9 @@ model Cart {
 }
 
 model CartItem {
-  id        Int      @id @default(autoincrement())
-  cartId    Int
-  productId Int
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cartId    String   @db.Uuid
+  productId String   @db.Uuid
   quantity  Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -208,9 +208,9 @@ model CartItem {
 }
 
 model Order {
-  id              Int           @id @default(autoincrement())
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderNumber     String        @unique @db.VarChar(50)
-  userId          Int
+  userId          String        @db.Uuid
   totalAmount     Decimal       @db.Decimal(12, 2)
   status          OrderStatus   @default(PENDING)
   paymentMethod   PaymentMethod @default(COD)
@@ -222,9 +222,9 @@ model Order {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  user  User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  items OrderItem[]
-  stockMovements StockMovement[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  items           OrderItem[]
+  stockMovements  StockMovement[]
   paymentAttempts PaymentAttempt[]
 
   @@index([userId, createdAt])
@@ -232,9 +232,9 @@ model Order {
 }
 
 model OrderItem {
-  id          Int     @id @default(autoincrement())
-  orderId     Int
-  productId   Int
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId     String  @db.Uuid
+  productId   String  @db.Uuid
   productName String  @db.VarChar(200)
   unitPrice   Decimal @db.Decimal(12, 2)
   quantity    Int
@@ -248,25 +248,25 @@ model OrderItem {
 }
 
 model PaymentAttempt {
-  id                  Int           @id @default(autoincrement())
-  orderId             Int
-  method              PaymentMethod
-  providerCode        String?       @db.VarChar(50)
-  status              PaymentStatus @default(PENDING)
-  amount              Decimal       @db.Decimal(12, 2)
-  currency            String        @default("MMK") @db.Char(3)
-  transactionReference String?      @db.VarChar(255)
-  proofUrl            String?       @db.Text
-  rejectionReason     String?       @db.Text
-  submittedAt         DateTime?
-  reviewedAt          DateTime?
-  paidAt              DateTime?
-  reviewedById        Int?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId              String        @db.Uuid
+  method               PaymentMethod
+  providerCode         String?       @db.VarChar(50)
+  status               PaymentStatus @default(PENDING)
+  amount               Decimal       @db.Decimal(12, 2)
+  currency             String        @default("MMK") @db.Char(3)
+  transactionReference String?       @db.VarChar(255)
+  proofUrl             String?       @db.Text
+  rejectionReason      String?       @db.Text
+  submittedAt          DateTime?
+  reviewedAt           DateTime?
+  paidAt               DateTime?
+  reviewedById         String?       @db.Uuid
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
-  order      Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  reviewedBy User?         @relation("PaymentAttemptReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  order      Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  reviewedBy User?          @relation("PaymentAttemptReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   events     PaymentEvent[]
 
   @@index([orderId, createdAt])
@@ -277,14 +277,14 @@ model PaymentAttempt {
 }
 
 model PaymentEvent {
-  id               Int           @id @default(autoincrement())
-  paymentAttemptId Int
-  eventType        String        @db.VarChar(50)
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  paymentAttemptId String         @db.Uuid
+  eventType        String         @db.VarChar(50)
   previousStatus   PaymentStatus?
   newStatus        PaymentStatus
-  actorId          Int?
-  reason           String?       @db.Text
-  createdAt        DateTime      @default(now())
+  actorId          String?        @db.Uuid
+  reason           String?        @db.Text
+  createdAt        DateTime       @default(now())
 
   paymentAttempt PaymentAttempt @relation(fields: [paymentAttemptId], references: [id], onDelete: Restrict)
   actor          User?          @relation("PaymentEventActor", fields: [actorId], references: [id], onDelete: SetNull)

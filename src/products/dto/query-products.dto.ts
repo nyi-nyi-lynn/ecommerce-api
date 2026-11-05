@@ -3,10 +3,10 @@ import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
-  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -39,16 +39,13 @@ export class QueryProductsDto extends PaginationQueryDto {
   @IsIn(['asc', 'desc'])
   sortOrder?: 'asc' | 'desc' = 'desc';
   @ApiPropertyOptional({
-    description: 'Filter by category numeric ID.',
-    type: Number,
-    minimum: 1,
-    maximum: 2147483647,
+    description: 'Filter by category UUID.',
+    type: String,
+    format: 'uuid',
   })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  categoryId?: number;
+  @IsUUID()
+  categoryId?: string;
   @ApiPropertyOptional({
     description: 'Inclusive minimum price.',
     type: Number,

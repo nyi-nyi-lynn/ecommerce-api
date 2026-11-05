@@ -183,7 +183,7 @@ export class AuthService {
     await this.revokeFamily(token.userId, token.familyId);
   }
 
-  private async createSession(userId: number, email: string, role: string) {
+  private async createSession(userId: string, email: string, role: string) {
     const refreshToken = this.newRefreshToken();
     await this.prisma.refreshToken.create({
       data: {
@@ -237,7 +237,7 @@ export class AuthService {
     );
   }
 
-  private async revokeFamily(userId: number, familyId: string) {
+  private async revokeFamily(userId: string, familyId: string) {
     await this.prisma.refreshToken.updateMany({
       where: { userId, familyId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -248,7 +248,7 @@ export class AuthService {
     const { passwordHash: _passwordHash, role, ...rest } = user;
     return { ...rest, role: role.name };
   }
-  async getProfile(userId: number) {
+  async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {

@@ -2,12 +2,12 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUrl,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -63,17 +63,14 @@ export class UpdateProductDto {
   @Min(0.01)
   price?: number;
   @ApiPropertyOptional({
-    description: 'Existing category numeric ID.',
-    type: Number,
-    example: 1,
-    minimum: 1,
-    maximum: 2147483647,
+    description: 'Existing category UUID.',
+    type: String,
+    format: 'uuid',
+    example: '11111111-1111-4111-8111-111111111111',
   })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  categoryId?: number;
+  @IsUUID()
+  categoryId?: string;
   @ApiPropertyOptional({
     description:
       'Legacy image URL. New clients should upload the image multipart field instead.',

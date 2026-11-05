@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AddCartItemDto, MAX_CART_INT } from './dto/add-cart-item.dto.js';
@@ -31,10 +32,10 @@ const CART_SELECT = {
 } satisfies Prisma.CartSelect;
 
 type CartItemRow = {
-  productId: number;
+  productId: string;
   quantity: number;
   product: {
-    id: number;
+    id: string;
     name: string;
     slug: string;
     imageUrl: string | null;
@@ -47,7 +48,7 @@ type CartItemRow = {
 export class CartService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getCart(userId: number) {
+  async getCart(userId: string) {
     this.validateUserId(userId);
     const cart = await this.prisma.cart.findUnique({
       where: { userId },
@@ -56,17 +57,17 @@ export class CartService {
     return this.toResponse(cart?.items ?? []);
   }
 
-  async addItem(userId: number, dto: AddCartItemDto) {
+  async addItem(userId: string, dto: AddCartItemDto) {
     this.validateUserId(userId);
-    this.validateInt(dto.productId, 'Product ID');
+    this.validateUuid(dto.productId, 'Product ID');
     this.validateInt(dto.quantity, 'Quantity');
 
     await this.prisma.$transaction(async (tx) => {
       // Cart.userId is unique. Let PostgreSQL resolve concurrent first-adds
       // against that constraint, avoiding an application read-then-create race.
-      const carts = await tx.$queryRaw<Array<{ id: number }>>`
+      const carts = await tx.$queryRaw<Array<{ id: string }>>`
         INSERT INTO "Cart" ("userId", "createdAt", "updatedAt")
-        VALUES (${userId}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (${userId}::uuid, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT ("userId") DO UPDATE
         SET "updatedAt" = "Cart"."updatedAt"
         RETURNING "id"
@@ -84,9 +85,9 @@ export class CartService {
 
       // Use PostgreSQL's unique-key UPSERT so increments are atomic. The WHERE
       // clause prevents integer overflow before the addition is evaluated.
-      const rows = await tx.$queryRaw<Array<{ id: number }>>`
+      const rows = await tx.$queryRaw<Array<{ id: string }>>`
         INSERT INTO "CartItem" ("cartId", "productId", "quantity", "createdAt", "updatedAt")
-        VALUES (${cart.id}, ${dto.productId}, ${dto.quantity}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (${cart.id}::uuid, ${dto.productId}::uuid, ${dto.quantity}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT ("cartId", "productId") DO UPDATE
         SET "quantity" = "CartItem"."quantity" + EXCLUDED."quantity",
             "updatedAt" = CURRENT_TIMESTAMP
@@ -103,9 +104,9 @@ export class CartService {
     return this.getCart(userId);
   }
 
-  async updateItem(userId: number, productId: number, dto: UpdateCartItemDto) {
+  async updateItem(userId: string, productId: string, dto: UpdateCartItemDto) {
     this.validateUserId(userId);
-    this.validateInt(productId, 'Product ID');
+    this.validateUuid(productId, 'Product ID');
     this.validateInt(dto.quantity, 'Quantity');
     await this.prisma.$transaction(async (tx) => {
       const cart = await this.lockCart(tx, userId);
@@ -120,9 +121,9 @@ export class CartService {
     return this.getCart(userId);
   }
 
-  async removeItem(userId: number, productId: number) {
+  async removeItem(userId: string, productId: string) {
     this.validateUserId(userId);
-    this.validateInt(productId, 'Product ID');
+    this.validateUuid(productId, 'Product ID');
     await this.prisma.$transaction(async (tx) => {
       const cart = await this.lockCart(tx, userId);
       if (!cart) throw new NotFoundException('Cart item not found.');
@@ -135,7 +136,7 @@ export class CartService {
     return this.getCart(userId);
   }
 
-  async clearCart(userId: number) {
+  async clearCart(userId: string) {
     this.validateUserId(userId);
     await this.prisma.$transaction(async (tx) => {
       const cart = await this.lockCart(tx, userId);
@@ -144,9 +145,9 @@ export class CartService {
     return { items: [], subtotal: new Prisma.Decimal(0) };
   }
 
-  private async lockCart(tx: Prisma.TransactionClient, userId: number) {
-    const carts = await tx.$queryRaw<Array<{ id: number }>>`
-      SELECT "id" FROM "Cart" WHERE "userId" = ${userId} FOR UPDATE
+  private async lockCart(tx: Prisma.TransactionClient, userId: string) {
+    const carts = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Cart" WHERE "userId" = ${userId}::uuid FOR UPDATE
     `;
     return carts[0] ?? null;
   }
@@ -170,9 +171,15 @@ export class CartService {
     return { items: responseItems, subtotal };
   }
 
-  private validateUserId(userId: number) {
-    if (!Number.isInteger(userId) || userId < 1 || userId > MAX_CART_INT) {
+  private validateUserId(userId: string) {
+    if (typeof userId !== 'string' || !isUUID(userId)) {
       throw new BadRequestException('Invalid authenticated user.');
+    }
+  }
+
+  private validateUuid(value: string, label: string) {
+    if (typeof value !== 'string' || !isUUID(value)) {
+      throw new BadRequestException(`${label} must be a valid UUID.`);
     }
   }
 

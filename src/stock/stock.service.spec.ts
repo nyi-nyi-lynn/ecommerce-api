@@ -4,6 +4,10 @@ import { AdjustStockDto } from './dto/adjust-stock.dto.js';
 import { StockService } from './stock.service.js';
 
 describe('StockService', () => {
+  const PRODUCT_ID = '00000000-0000-4000-8000-000000000005';
+  const MISSING_PRODUCT_ID = '00000000-0000-4000-8000-000000000999';
+  const ACTOR_ID = '00000000-0000-4000-8000-000000000008';
+
   let service: StockService;
   let prisma: any;
   let tx: any;
@@ -23,7 +27,10 @@ describe('StockService', () => {
       product: {
         findUnique: vi.fn(async () =>
           productExists
-            ? { id: 5, stock: quantity === null ? null : { productId: 5 } }
+            ? {
+                id: PRODUCT_ID,
+                stock: quantity === null ? null : { productId: PRODUCT_ID },
+              }
             : null,
         ),
       },
@@ -38,7 +45,7 @@ describe('StockService', () => {
         create: vi.fn(async ({ data }) => {
           if (failMovement) throw new Error('movement insert failed');
           const movement = {
-            id: movements.length + 1,
+            id: `00000000-0000-4000-8000-${String(movements.length + 1).padStart(12, '0')}`,
             ...data,
             createdAt: new Date(),
           };
@@ -47,8 +54,8 @@ describe('StockService', () => {
         }),
       },
       $queryRaw: vi.fn(
-        async (_strings: TemplateStringsArray, ...values: number[]) => {
-          const change = values[0];
+        async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+          const change = values[0] as number;
           if (
             quantity === null ||
             quantity + change < 0 ||
@@ -81,7 +88,7 @@ describe('StockService', () => {
                   quantity === null
                     ? null
                     : {
-                        productId: 5,
+                        productId: PRODUCT_ID,
                         quantity,
                         reservedQuantity: 0,
                         updatedAt: new Date(),
@@ -89,15 +96,20 @@ describe('StockService', () => {
               }
             : null,
         ),
-        findUnique: vi.fn(async () => (productExists ? { id: 5 } : null)),
+        findUnique: vi.fn(async () =>
+          productExists ? { id: PRODUCT_ID } : null,
+        ),
       },
       stock: { findUnique: vi.fn() },
       stockMovement: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([
-            { id: 1, quantity: 12, quantityBefore: 0, quantityAfter: 12 },
-          ]),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: '00000000-0000-4000-8000-000000000001',
+            quantity: 12,
+            quantityBefore: 0,
+            quantityAfter: 12,
+          },
+        ]),
         count: vi.fn().mockResolvedValue(1),
       },
     };
@@ -105,27 +117,31 @@ describe('StockService', () => {
   });
 
   it('initializes an existing product and records its initial movement atomically', async () => {
-    const stock = await service.initialize(5, { quantity: 12 }, 8);
-    expect(stock).toMatchObject({ productId: 5, quantity: 12 });
+    const stock = await service.initialize(
+      PRODUCT_ID,
+      { quantity: 12 },
+      ACTOR_ID,
+    );
+    expect(stock).toMatchObject({ productId: PRODUCT_ID, quantity: 12 });
     expect(movements[0]).toMatchObject({
       type: 'INITIALIZATION',
       quantity: 12,
       quantityBefore: 0,
       quantityAfter: 12,
-      userId: 8,
+      userId: ACTOR_ID,
     });
     expect(prisma.$transaction).toHaveBeenCalledOnce();
   });
 
   it('permits zero initial quantity and rejects duplicate initialization', async () => {
-    await service.initialize(5, { quantity: 0 }, 8);
+    await service.initialize(PRODUCT_ID, { quantity: 0 }, ACTOR_ID);
     expect(movements[0]).toMatchObject({
       quantity: 0,
       quantityBefore: 0,
       quantityAfter: 0,
     });
     await expect(
-      service.initialize(5, { quantity: 2 }, 8),
+      service.initialize(PRODUCT_ID, { quantity: 2 }, ACTOR_ID),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(movements).toHaveLength(1);
   });
@@ -133,7 +149,7 @@ describe('StockService', () => {
   it('returns not found when initializing stock for an unknown product', async () => {
     productExists = false;
     await expect(
-      service.initialize(999, { quantity: 2 }, 8),
+      service.initialize(MISSING_PRODUCT_ID, { quantity: 2 }, ACTOR_ID),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.stock.create).not.toHaveBeenCalled();
     expect(tx.stockMovement.create).not.toHaveBeenCalled();
@@ -142,18 +158,18 @@ describe('StockService', () => {
   it('applies signed increases and decreases with before/change/after audit values', async () => {
     quantity = 10;
     const increase: AdjustStockDto = { quantityChange: 5, reason: 'RESTOCK' };
-    const increased = await service.adjust(5, increase, 8);
+    const increased = await service.adjust(PRODUCT_ID, increase, ACTOR_ID);
     expect(increased.stock.quantity).toBe(15);
     expect(movements[0]).toMatchObject({
       quantity: 5,
       quantityBefore: 10,
       quantityAfter: 15,
       type: 'RESTOCK',
-      userId: 8,
+      userId: ACTOR_ID,
     });
 
     const decrease: AdjustStockDto = { quantityChange: -4, reason: 'SALE' };
-    const decreased = await service.adjust(5, decrease, 8);
+    const decreased = await service.adjust(PRODUCT_ID, decrease, ACTOR_ID);
     expect(decreased.stock.quantity).toBe(11);
     expect(movements[1]).toMatchObject({
       quantity: -4,
@@ -170,14 +186,18 @@ describe('StockService', () => {
   it('rejects insufficient stock and rolls back quantity if movement insertion fails', async () => {
     quantity = 3;
     await expect(
-      service.adjust(5, { quantityChange: -4, reason: 'SALE' }, 8),
+      service.adjust(PRODUCT_ID, { quantityChange: -4, reason: 'SALE' }, ACTOR_ID),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(quantity).toBe(3);
     expect(movements).toHaveLength(0);
 
     failMovement = true;
     await expect(
-      service.adjust(5, { quantityChange: 2, reason: 'RESTOCK' }, 8),
+      service.adjust(
+        PRODUCT_ID,
+        { quantityChange: 2, reason: 'RESTOCK' },
+        ACTOR_ID,
+      ),
     ).rejects.toThrow('movement insert failed');
     expect(quantity).toBe(3);
     expect(movements).toHaveLength(0);
@@ -185,22 +205,22 @@ describe('StockService', () => {
 
   it('rolls back initialization if its initial movement cannot be recorded', async () => {
     failMovement = true;
-    await expect(service.initialize(5, { quantity: 12 }, 8)).rejects.toThrow(
-      'movement insert failed',
-    );
+    await expect(
+      service.initialize(PRODUCT_ID, { quantity: 12 }, ACTOR_ID),
+    ).rejects.toThrow('movement insert failed');
     expect(quantity).toBeNull();
     expect(movements).toHaveLength(0);
   });
 
   it('returns stock and stable, paginated movement history without full user records', async () => {
     quantity = 9;
-    expect(await service.getStock(5)).toMatchObject({
-      productId: 5,
+    expect(await service.getStock(PRODUCT_ID)).toMatchObject({
+      productId: PRODUCT_ID,
       quantity: 9,
       availableQuantity: 9,
     });
     expect(prisma.product.findFirst).toHaveBeenCalledWith({
-      where: { id: 5, isActive: true },
+      where: { id: PRODUCT_ID, isActive: true },
       select: {
         stock: {
           select: {
@@ -213,7 +233,10 @@ describe('StockService', () => {
       },
     });
     expect(prisma.stock.findUnique).not.toHaveBeenCalled();
-    const history = await service.getMovements(5, { page: 2, limit: 10 });
+    const history = await service.getMovements(PRODUCT_ID, {
+      page: 2,
+      limit: 10,
+    });
     expect(history.pagination).toEqual({
       page: 2,
       limit: 10,
@@ -222,7 +245,7 @@ describe('StockService', () => {
     });
     expect(prisma.stockMovement.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { productId: 5 },
+        where: { productId: PRODUCT_ID },
         skip: 10,
         take: 10,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -231,21 +254,27 @@ describe('StockService', () => {
         }),
       }),
     );
-    expect(await service.getStock(5)).not.toHaveProperty('reservedQuantity');
+    expect(await service.getStock(PRODUCT_ID)).not.toHaveProperty(
+      'reservedQuantity',
+    );
   });
 
   it('does not return stock for inactive or missing products and preserves the not-found distinction', async () => {
     quantity = 9;
     productActive = false;
-    await expect(service.getStock(5)).rejects.toThrow('Product not found.');
+    await expect(service.getStock(PRODUCT_ID)).rejects.toThrow(
+      'Product not found.',
+    );
     expect(prisma.stock.findUnique).not.toHaveBeenCalled();
 
     productActive = true;
     quantity = null;
-    await expect(service.getStock(5)).rejects.toThrow(
+    await expect(service.getStock(PRODUCT_ID)).rejects.toThrow(
       'Stock has not been initialized for this product.',
     );
     productExists = false;
-    await expect(service.getStock(5)).rejects.toThrow('Product not found.');
+    await expect(service.getStock(PRODUCT_ID)).rejects.toThrow(
+      'Product not found.',
+    );
   });
 });

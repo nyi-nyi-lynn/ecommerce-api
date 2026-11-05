@@ -8,6 +8,11 @@ import { CartController } from './cart.controller.js';
 import { CartService } from './cart.service.js';
 
 describe('Cart HTTP', () => {
+  const USER_11 = '00000000-0000-4000-8000-000000000011';
+  const USER_12 = '00000000-0000-4000-8000-000000000012';
+  const PRODUCT_7 = '00000000-0000-4000-8000-000000000007';
+  const ITEM_1 = '00000000-0000-4000-8000-000000000001';
+
   let app: INestApplication;
   let jwt: JwtService;
   let prisma: any;
@@ -17,22 +22,22 @@ describe('Cart HTTP', () => {
     const tx = {
       product: {
         findUnique: vi.fn(async ({ where }) =>
-          where.id === 7 ? { id: 7, isActive: true } : null,
+          where.id === PRODUCT_7 ? { id: PRODUCT_7, isActive: true } : null,
         ),
       },
       cart: { upsert: vi.fn(async ({ where }) => ({ id: where.userId })) },
-      $queryRaw: vi.fn(async () => [{ id: 1 }]),
+      $queryRaw: vi.fn(async () => [{ id: ITEM_1 }]),
     };
     prisma = {
       $transaction: vi.fn(async (callback) => callback(tx)),
       cart: {
         findUnique: vi.fn(async ({ where }) =>
-          where.userId === 11
+          where.userId === USER_11
             ? {
                 items: itemRows.map((row) => ({
                   ...row,
                   product: {
-                    id: 7,
+                    id: PRODUCT_7,
                     name: 'Tea',
                     slug: 'tea',
                     imageUrl: null,
@@ -61,7 +66,7 @@ describe('Cart HTTP', () => {
     jwt = app.get(JwtService);
   });
   afterEach(async () => app.close());
-  const auth = (id = 11) => ({
+  const auth = (id = USER_11) => ({
     Authorization: `Bearer ${jwt.sign({ sub: id })}`,
   });
 
@@ -77,19 +82,19 @@ describe('Cart HTTP', () => {
     });
     expect(response.body.data.data).toBeUndefined();
     expect(prisma.cart.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 11 } }),
+      expect.objectContaining({ where: { userId: USER_11 } }),
     );
   });
 
   it('rejects unknown fields, invalid inputs, and integer overflow before DB work', async () => {
     for (const body of [
-      { productId: 7, quantity: 1, userId: 12 },
+      { productId: PRODUCT_7, quantity: 1, userId: USER_12 },
       { productId: 0, quantity: 1 },
       { productId: -1, quantity: 1 },
-      { productId: 2_147_483_648, quantity: 1 },
+      { productId: 'not-a-uuid', quantity: 1 },
       { productId: 1.5, quantity: 1 },
-      { productId: 7, quantity: 0 },
-      { productId: 7, quantity: 2_147_483_648 },
+      { productId: PRODUCT_7, quantity: 0 },
+      { productId: PRODUCT_7, quantity: 2_147_483_648 },
     ]) {
       const response = await request(app.getHttpServer())
         .post('/api/cart/items')
@@ -104,12 +109,12 @@ describe('Cart HTTP', () => {
   it('uses JWT subject for cart creation and rejects invalid path IDs', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/cart/items')
-      .set(auth(11))
-      .send({ productId: 7, quantity: 2 })
+      .set(auth(USER_11))
+      .send({ productId: PRODUCT_7, quantity: 2 })
       .expect(201);
     expect(response.body.success).toBe(true);
     expect(prisma.cart.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 11 } }),
+      expect.objectContaining({ where: { userId: USER_11 } }),
     );
     await request(app.getHttpServer())
       .patch('/api/cart/items/2147483648')

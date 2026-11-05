@@ -3,7 +3,7 @@ import {
   Controller,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -21,15 +21,41 @@ import { CreateProductDto } from './dto/create-product.dto.js';
 import { QueryProductsDto } from './dto/query-products.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { ProductsService } from './products.service.js';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiExtraModels,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
 
+const PRODUCT_ID_EXAMPLE = '550e8400-e29b-41d4-a716-446655440000';
+const CATEGORY_ID_EXAMPLE = '11111111-1111-4111-8111-111111111111';
+
+const PRODUCT_EXAMPLE = {
+  id: PRODUCT_ID_EXAMPLE,
+  categoryId: CATEGORY_ID_EXAMPLE,
+  name: 'Wireless Headphones',
+  slug: 'wireless-headphones',
+  sku: 'WH-1000',
+  description: 'Over-ear wireless headphones.',
+  price: '125000.00',
+  imageUrl: null,
+  imagePublicId: null,
+  isActive: true,
+  createdAt: '2026-10-30T08:00:00.000Z',
+  updatedAt: '2026-10-30T08:00:00.000Z',
+};
+
 @Controller('products')
 @ApiTags('Products')
+@ApiExtraModels(CreateProductDto, UpdateProductDto)
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
@@ -47,7 +73,11 @@ export class ProductsController {
         sku: { type: 'string' },
         description: { type: 'string' },
         price: { type: 'number' },
-        categoryId: { type: 'integer' },
+        categoryId: {
+          type: 'string',
+          format: 'uuid',
+          example: CATEGORY_ID_EXAMPLE,
+        },
         image: { type: 'string', format: 'binary' },
       },
     },
@@ -63,11 +93,12 @@ export class ProductsController {
     description: `Creates a product; its category must exist. ${DYNAMIC_RBAC_DESCRIPTION}`,
     successStatus: 201,
     errors: [400, 401, 403, 404, 409, 500],
+    successExample: PRODUCT_EXAMPLE,
   })
   create(
     @Body() dto: CreateProductDto,
     @UploadedFile() image: Express.Multer.File | undefined,
-    @CurrentUser('sub') userId: number | undefined,
+    @CurrentUser('sub') userId: string | undefined,
   ) {
     return this.products.create(dto, image, userId);
   }
@@ -76,6 +107,13 @@ export class ProductsController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('product:update')
   @ApiBearerAuth()
+  @ApiParam({
+    name: 'id',
+    description: 'Product UUID.',
+    type: String,
+    format: 'uuid',
+    example: PRODUCT_ID_EXAMPLE,
+  })
   @ApiConsumes('multipart/form-data', 'application/json')
   @ApiBody({
     schema: {
@@ -86,7 +124,11 @@ export class ProductsController {
         sku: { type: 'string' },
         description: { type: 'string' },
         price: { type: 'number' },
-        categoryId: { type: 'integer' },
+        categoryId: {
+          type: 'string',
+          format: 'uuid',
+          example: CATEGORY_ID_EXAMPLE,
+        },
         isActive: { type: 'boolean' },
         image: { type: 'string', format: 'binary' },
       },
@@ -102,12 +144,13 @@ export class ProductsController {
     summary: 'Update product',
     description: `Updates product fields. ${DYNAMIC_RBAC_DESCRIPTION}`,
     errors: [400, 401, 403, 404, 409, 500],
+    successExample: PRODUCT_EXAMPLE,
   })
   update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
     @UploadedFile() image: Express.Multer.File | undefined,
-    @CurrentUser('sub') userId: number | undefined,
+    @CurrentUser('sub') userId: string | undefined,
   ) {
     return this.products.update(id, dto, image, userId);
   }
@@ -119,8 +162,8 @@ export class ProductsController {
       'Returns active products with database pagination, allowlisted sorting, category/price filters, and name search.',
     errors: [400, 500],
     successExample: {
-      items: [],
-      pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+      items: [PRODUCT_EXAMPLE],
+      pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
     },
   })
   findAll(@Query() query: QueryProductsDto) {
@@ -132,18 +175,27 @@ export class ProductsController {
     summary: 'Get product by slug',
     description: 'Returns an active product by its unique slug.',
     errors: [404, 500],
+    successExample: PRODUCT_EXAMPLE,
   })
   findBySlug(@Param('slug') slug: string) {
     return this.products.findBySlug(slug);
   }
 
   @Get(':id')
+  @ApiParam({
+    name: 'id',
+    description: 'Product UUID.',
+    type: String,
+    format: 'uuid',
+    example: PRODUCT_ID_EXAMPLE,
+  })
   @ApiDocumentEndpoint({
     summary: 'Get product by ID',
-    description: 'Returns an active product by numeric ID.',
+    description: 'Returns an active product by UUID.',
     errors: [400, 404, 500],
+    successExample: PRODUCT_EXAMPLE,
   })
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.products.findOne(id);
   }
 }

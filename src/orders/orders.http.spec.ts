@@ -13,6 +13,16 @@ import {
 import { OrdersService } from './orders.service.js';
 
 describe('Orders HTTP', () => {
+  const USER_1 = '00000000-0000-4000-8000-000000000001';
+  const USER_2 = '00000000-0000-4000-8000-000000000002';
+  const USER_11 = '00000000-0000-4000-8000-000000000011';
+  const USER_99 = '00000000-0000-4000-8000-000000000099';
+  const PRODUCT_5 = '00000000-0000-4000-8000-000000000005';
+  const ORDER_1 = '00000000-0000-4000-8000-000000000001';
+  const ORDER_2 = '00000000-0000-4000-8000-000000000002';
+  const ORDER_4 = '00000000-0000-4000-8000-000000000004';
+  const CART_7 = '00000000-0000-4000-8000-000000000007';
+
   let app: INestApplication;
   let jwt: JwtService;
   let prisma: any;
@@ -24,7 +34,7 @@ describe('Orders HTTP', () => {
         findUnique: vi.fn(async ({ where }) => ({
           isActive: true,
           role: {
-            permissions: (where.id === 2
+            permissions: (where.id === USER_2
               ? ['order:read', 'order:update']
               : []
             ).map((code) => ({ permission: { code } })),
@@ -34,7 +44,7 @@ describe('Orders HTTP', () => {
     };
     orders = {
       create: vi.fn(async (userId, dto) => ({
-        id: 1,
+        id: ORDER_1,
         userId,
         items: dto.items,
         totalAmount: '7.50',
@@ -43,9 +53,9 @@ describe('Orders HTTP', () => {
         paymentStatus: 'PENDING',
       })),
       checkout: vi.fn(async (userId, dto) => ({
-        id: 2,
+        id: ORDER_2,
         userId,
-        items: [{ productId: 5, quantity: 2 }],
+        items: [{ productId: PRODUCT_5, quantity: 2 }],
         totalAmount: '7.50',
         status: 'PENDING',
         paymentMethod: 'COD',
@@ -53,7 +63,7 @@ describe('Orders HTTP', () => {
         shippingName: dto.shippingName,
       })),
       listMine: vi.fn(async (userId, query) => ({
-        items: [{ id: 1, userId }],
+        items: [{ id: ORDER_1, userId }],
         pagination: {
           page: query.page,
           limit: query.limit,
@@ -98,12 +108,12 @@ describe('Orders HTTP', () => {
   });
 
   afterEach(async () => app.close());
-  const token = (id: number, role: string) => jwt.sign({ sub: id, role });
-  const as = (id: number, role = 'CUSTOMER') => ({
+  const token = (id: string, role: string) => jwt.sign({ sub: id, role });
+  const as = (id: string, role = 'CUSTOMER') => ({
     Authorization: `Bearer ${token(id, role)}`,
   });
   const body = {
-    items: [{ productId: 5, quantity: 2 }],
+    items: [{ productId: PRODUCT_5, quantity: 2 }],
     shippingName: 'Ada',
     shippingPhone: '555',
     shippingAddress: '1 Main St',
@@ -121,17 +131,19 @@ describe('Orders HTTP', () => {
       .expect(401);
     const response = await request(app.getHttpServer())
       .post('/api/orders')
-      .set(as(11))
+      .set(as(USER_11))
       .send(body)
       .expect(201);
     expect(response.body).toMatchObject({
       success: true,
-      data: { userId: 11, paymentStatus: 'PENDING' },
+      data: { userId: USER_11, paymentStatus: 'PENDING' },
     });
     expect(response.body.data.data).toBeUndefined();
     expect(orders.create).toHaveBeenCalledWith(
-      11,
-      expect.objectContaining({ items: [{ productId: 5, quantity: 2 }] }),
+      USER_11,
+      expect.objectContaining({
+        items: [{ productId: PRODUCT_5, quantity: 2 }],
+      }),
     );
   });
 
@@ -142,13 +154,13 @@ describe('Orders HTTP', () => {
       .expect(401);
     const response = await request(app.getHttpServer())
       .post('/api/orders/checkout')
-      .set(as(11))
+      .set(as(USER_11))
       .send(checkoutBody)
       .expect(201);
     expect(response.body).toMatchObject({
       success: true,
       data: {
-        userId: 11,
+        userId: USER_11,
         status: 'PENDING',
         paymentMethod: 'COD',
         paymentStatus: 'PENDING',
@@ -156,7 +168,7 @@ describe('Orders HTTP', () => {
     });
     expect(response.body.data.data).toBeUndefined();
     expect(orders.checkout).toHaveBeenCalledWith(
-      11,
+      USER_11,
       expect.objectContaining(checkoutBody),
     );
   });
@@ -164,9 +176,9 @@ describe('Orders HTTP', () => {
   it('rejects missing shipping fields and client-supplied Cart or order data', async () => {
     for (const invalid of [
       { shippingName: 'Ada', shippingPhone: '555' },
-      { ...checkoutBody, userId: 99 },
-      { ...checkoutBody, cartId: 7 },
-      { ...checkoutBody, items: [{ productId: 5, quantity: 1 }] },
+      { ...checkoutBody, userId: USER_99 },
+      { ...checkoutBody, cartId: CART_7 },
+      { ...checkoutBody, items: [{ productId: PRODUCT_5, quantity: 1 }] },
       { ...checkoutBody, totalAmount: 1 },
       { ...checkoutBody, shippingName: ' '.repeat(101) },
       { ...checkoutBody, shippingPhone: 'x'.repeat(31) },
@@ -175,7 +187,7 @@ describe('Orders HTTP', () => {
     ]) {
       await request(app.getHttpServer())
         .post('/api/orders/checkout')
-        .set(as(11))
+        .set(as(USER_11))
         .send(invalid)
         .expect(400);
     }
@@ -185,48 +197,48 @@ describe('Orders HTTP', () => {
   it('accepts COD and MANUAL, defaults omitted checkout method to COD, and rejects GATEWAY', async () => {
     await request(app.getHttpServer())
       .post('/api/orders')
-      .set(as(11))
+      .set(as(USER_11))
       .send({ ...body, paymentMethod: 'MANUAL' })
       .expect(201);
     await request(app.getHttpServer())
       .post('/api/orders/checkout')
-      .set(as(11))
+      .set(as(USER_11))
       .send({ ...checkoutBody, paymentMethod: 'COD' })
       .expect(201);
     await request(app.getHttpServer())
       .post('/api/orders')
-      .set(as(11))
+      .set(as(USER_11))
       .send({ ...body, paymentMethod: 'GATEWAY' })
       .expect(400);
     await request(app.getHttpServer())
       .post('/api/orders/checkout')
-      .set(as(11))
+      .set(as(USER_11))
       .send({ ...checkoutBody, paymentMethod: 'GATEWAY' })
       .expect(400);
     expect(orders.create).toHaveBeenCalledWith(
-      11,
+      USER_11,
       expect.objectContaining({ paymentMethod: 'MANUAL' }),
     );
     expect(orders.checkout).toHaveBeenCalledWith(
-      11,
+      USER_11,
       expect.objectContaining({ paymentMethod: 'COD' }),
     );
   });
 
   it('rejects unknown and client-managed fields plus invalid order lines before service calls', async () => {
-    const header = as(11);
+    const header = as(USER_11);
     for (const invalid of [
-      { ...body, userId: 99 },
+      { ...body, userId: USER_99 },
       { ...body, totalAmount: 1 },
-      { ...body, items: [{ productId: 5, quantity: 1, unitPrice: 0 }] },
+      { ...body, items: [{ productId: PRODUCT_5, quantity: 1, unitPrice: 0 }] },
       {
         ...body,
         items: [
-          { productId: 5, quantity: 1 },
-          { productId: 5, quantity: 2 },
+          { productId: PRODUCT_5, quantity: 1 },
+          { productId: PRODUCT_5, quantity: 2 },
         ],
       },
-      { ...body, items: [{ productId: 5, quantity: 0 }] },
+      { ...body, items: [{ productId: PRODUCT_5, quantity: 0 }] },
       { ...body, items: [] },
     ])
       await request(app.getHttpServer())
@@ -237,9 +249,9 @@ describe('Orders HTTP', () => {
     expect(orders.create).not.toHaveBeenCalled();
   });
 
-  it('rejects product IDs outside PostgreSQL INT bounds and accepts the maximum valid ID', async () => {
-    const header = as(11);
-    for (const productId of [0, -1, 2_147_483_648, 1.5]) {
+  it('rejects invalid product UUIDs and accepts valid product UUIDs', async () => {
+    const header = as(USER_11);
+    for (const productId of [0, -1, 2_147_483_648, 1.5, 'not-a-uuid', '']) {
       await request(app.getHttpServer())
         .post('/api/orders')
         .set(header)
@@ -248,15 +260,16 @@ describe('Orders HTTP', () => {
     }
     expect(orders.create).not.toHaveBeenCalled();
 
+    const maxUuid = 'ffffffff-ffff-4fff-bfff-ffffffffffff';
     await request(app.getHttpServer())
       .post('/api/orders')
       .set(header)
-      .send({ ...body, items: [{ productId: 2_147_483_647, quantity: 1 }] })
+      .send({ ...body, items: [{ productId: maxUuid, quantity: 1 }] })
       .expect(201);
     expect(orders.create).toHaveBeenCalledWith(
-      11,
+      USER_11,
       expect.objectContaining({
-        items: [{ productId: 2_147_483_647, quantity: 1 }],
+        items: [{ productId: maxUuid, quantity: 1 }],
       }),
     );
   });
@@ -264,57 +277,57 @@ describe('Orders HTTP', () => {
   it('uses owner-scoped paginated routes and the standard success envelope', async () => {
     const listed = await request(app.getHttpServer())
       .get('/api/orders?page=2&limit=5')
-      .set(as(11))
+      .set(as(USER_11))
       .expect(200);
     expect(listed.body).toMatchObject({
       success: true,
       data: { pagination: { page: 2, limit: 5 } },
     });
     expect(orders.listMine).toHaveBeenCalledWith(
-      11,
+      USER_11,
       expect.objectContaining({ page: 2, limit: 5 }),
     );
     const detail = await request(app.getHttpServer())
-      .get('/api/orders/4')
-      .set(as(11))
+      .get(`/api/orders/${ORDER_4}`)
+      .set(as(USER_11))
       .expect(200);
-    expect(detail.body.data).toEqual({ id: 4, userId: 11 });
+    expect(detail.body.data).toEqual({ id: ORDER_4, userId: USER_11 });
     await request(app.getHttpServer())
-      .post('/api/orders/4/cancel')
-      .set(as(11))
+      .post(`/api/orders/${ORDER_4}/cancel`)
+      .set(as(USER_11))
       .expect(201);
   });
 
   it('enforces admin order permissions from database rather than JWT role claims', async () => {
     await request(app.getHttpServer())
       .get('/api/admin/orders')
-      .set(as(1, 'ADMIN'))
+      .set(as(USER_1, 'ADMIN'))
       .expect(403);
     await request(app.getHttpServer())
       .get('/api/admin/orders')
-      .set(as(2, 'CUSTOMER'))
+      .set(as(USER_2, 'CUSTOMER'))
       .expect(200);
     await request(app.getHttpServer())
-      .patch('/api/admin/orders/1/status')
-      .set(as(2, 'CUSTOMER'))
+      .patch(`/api/admin/orders/${ORDER_1}/status`)
+      .set(as(USER_2, 'CUSTOMER'))
       .send({ status: 'CONFIRMED' })
       .expect(200);
     expect(orders.updateStatus).toHaveBeenCalledWith(
-      1,
+      ORDER_1,
       { status: 'CONFIRMED' },
-      2,
+      USER_2,
     );
     await request(app.getHttpServer())
-      .patch('/api/admin/orders/1/status')
-      .set(as(2, 'CUSTOMER'))
+      .patch(`/api/admin/orders/${ORDER_1}/status`)
+      .set(as(USER_2, 'CUSTOMER'))
       .send({ status: 'UNKNOWN' })
       .expect(400);
     await request(app.getHttpServer())
       .get('/api/admin/orders')
-      .set(as(2, 'CUSTOMER'))
+      .set(as(USER_2, 'CUSTOMER'))
       .expect(200);
     expect(prisma.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 2 } }),
+      expect.objectContaining({ where: { id: USER_2 } }),
     );
   });
 });
