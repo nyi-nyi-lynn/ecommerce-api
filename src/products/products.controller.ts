@@ -33,6 +33,8 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
 
 const PRODUCT_ID_EXAMPLE = '550e8400-e29b-41d4-a716-446655440000';
@@ -60,6 +62,7 @@ export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
   @Post()
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('product:create')
   @ApiBearerAuth()
@@ -104,6 +107,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('product:update')
   @ApiBearerAuth()

@@ -17,6 +17,8 @@ import { InitializeStockDto } from './dto/initialize-stock.dto.js';
 import { QueryStockMovementsDto } from './dto/query-stock-movements.dto.js';
 import { StockService } from './stock.service.js';
 import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
@@ -28,6 +30,7 @@ export class StockController {
   constructor(private readonly stock: StockService) {}
 
   @Post('products/:productId/initialize')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('stock:update')
   @ApiBearerAuth()
@@ -72,6 +75,7 @@ export class StockController {
   }
 
   @Post('products/:productId/adjustments')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('stock:update')
   @ApiBearerAuth()

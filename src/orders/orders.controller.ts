@@ -19,6 +19,8 @@ import { QueryAdminOrdersDto, QueryOrdersDto } from './dto/query-orders.dto.js';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import { OrdersService } from './orders.service.js';
 import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
@@ -31,6 +33,7 @@ export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
   @Post()
+  @Throttle(RATE_LIMIT_POLICIES.ORDER_MUTATION)
   @UseGuards(JwtAuthGuard)
   @ApiDocumentEndpoint({
     summary: 'Create order directly',
@@ -72,6 +75,7 @@ export class OrdersController {
   }
 
   @Post('checkout')
+  @Throttle(RATE_LIMIT_POLICIES.ORDER_MUTATION)
   @UseGuards(JwtAuthGuard)
   @ApiDocumentEndpoint({
     summary: 'Checkout current cart',
@@ -188,6 +192,7 @@ export class OrdersController {
   }
 
   @Post(':id/cancel')
+  @Throttle(RATE_LIMIT_POLICIES.ORDER_MUTATION)
   @UseGuards(JwtAuthGuard)
   @ApiParam({
     name: 'id',

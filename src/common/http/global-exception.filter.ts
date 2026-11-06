@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { STATUS_CODES } from 'node:http';
+import { ThrottlerException, throttlerMessage } from '@nestjs/throttler';
 import { Prisma } from '../../generated/prisma/client.js';
 import { MulterError } from 'multer';
+import { DEFAULT_RATE_LIMIT_ERROR_MESSAGE } from '../rate-limit/rate-limit.constants.js';
 
 interface ErrorEnvelope {
   success: false;
@@ -72,6 +74,28 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       };
     }
 
+    if (exception instanceof ThrottlerException) {
+      const errorResponse = exception.getResponse();
+      const rawMessage =
+        typeof errorResponse === 'string'
+          ? errorResponse
+          : this.getResponseMessage(errorResponse);
+      const isDefaultThrottlerMessage =
+        !rawMessage ||
+        rawMessage === throttlerMessage ||
+        rawMessage === 'Too Many Requests';
+      const message = isDefaultThrottlerMessage
+        ? DEFAULT_RATE_LIMIT_ERROR_MESSAGE
+        : this.normalizeMessage(rawMessage, HttpStatus.TOO_MANY_REQUESTS);
+
+      return {
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        message,
+        error:
+          STATUS_CODES[HttpStatus.TOO_MANY_REQUESTS] ?? 'Too Many Requests',
+      };
+    }
+
     if (!(exception instanceof HttpException)) {
       return this.internalError();
     }
@@ -122,7 +146,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   private sanitizeClientMessage(value: string): string {
     const message = value.trim().slice(0, 500);
     const containsSensitiveDetail =
-      /PrismaClient|\bSELECT\b[\s\S]*\bFROM\b|\bINSERT\b[\s\S]*\bINTO\b|\bUPDATE\b[\s\S]*\bSET\b|postgres(?:ql)?:\/\/|\bBearer\s+\S+|\b(?:password|secret|authorization)\s*[:=]\s*\S+/i.test(
+      /PrismaClient|\bSELECT\b[\s\S]*\bFROM\b|\bINSERT\b[\s\S]*\bINTO\b|\bUPDATE\b[\s\S]*\bSET\b|postgres(?:ql)?:\/\/|redis(?:s)?:\/\/|\bioredis\b|\bNOAUTH\b|\bECONNREFUSED\b|\bAUTH\s+\S+|\bBearer\s+\S+|\b(?:password|secret|authorization)\s*[:=]\s*\S+/i.test(
         message,
       ) ||
       /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/.test(message) ||
@@ -135,6 +159,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private defaultMessage(statusCode: number): string {
+    if (statusCode === HttpStatus.TOO_MANY_REQUESTS) {
+      return DEFAULT_RATE_LIMIT_ERROR_MESSAGE;
+    }
     return STATUS_CODES[statusCode] ?? 'Request failed.';
   }
 
