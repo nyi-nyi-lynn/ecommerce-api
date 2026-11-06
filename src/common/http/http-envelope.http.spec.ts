@@ -9,10 +9,13 @@ import {
   NotFoundException,
   Post,
   Redirect,
+  Res,
   StreamableFile,
   UnauthorizedException,
   Body,
 } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { IsString, MinLength } from 'class-validator';
 import { MulterError } from 'multer';
 import request from 'supertest';
@@ -81,6 +84,13 @@ class ResponseTestController {
   @Get('conflict')
   conflict(): never {
     throw new ConflictException('The value already exists.');
+  }
+
+  @Get('too-many-requests')
+  tooManyRequests(@Res({ passthrough: true }) res: Response): never {
+    res.setHeader('Retry-After', '42');
+    res.setHeader('X-Custom-Header', 'preserved-value');
+    throw new ThrottlerException();
   }
 
   @Get('sensitive-client-message')
@@ -228,6 +238,18 @@ describe('Global HTTP response formatting', () => {
       .get('/api/response-test/conflict')
       .expect(409)
       .expect(({ body }) => expect(body.error).toBe('Conflict'));
+    const throttled = await request(app.getHttpServer())
+      .get('/api/response-test/too-many-requests')
+      .expect(429);
+    expect(throttled.headers['retry-after']).toBe('42');
+    expect(throttled.headers['x-custom-header']).toBe('preserved-value');
+    expect(throttled.body).toMatchObject({
+      success: false,
+      statusCode: 429,
+      message: 'Too many requests. Please try again later.',
+      error: 'Too Many Requests',
+      path: '/api/response-test/too-many-requests',
+    });
     const sensitive = await request(app.getHttpServer())
       .get('/api/response-test/sensitive-client-message')
       .expect(400);

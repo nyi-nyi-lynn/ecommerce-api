@@ -16,6 +16,8 @@ import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { RejectPaymentDto } from './dto/reject-payment.dto.js';
 import { SubmitManualPaymentDto } from './dto/submit-manual-payment.dto.js';
 import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
@@ -70,6 +72,7 @@ export class PaymentsController {
   }
 
   @Post('orders/:orderId/manual')
+  @Throttle(RATE_LIMIT_POLICIES.PAYMENT_SUBMIT)
   @ApiParam({
     name: 'orderId',
     description: 'Order UUID.',
@@ -202,6 +205,7 @@ export class AdminPaymentsController {
   }
 
   @Post(':attemptId/approve')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @RequirePermissions('payment:update')
   @ApiParam({
     name: 'attemptId',
@@ -232,6 +236,7 @@ export class AdminPaymentsController {
   }
 
   @Post(':attemptId/reject')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @RequirePermissions('payment:update')
   @ApiParam({
     name: 'attemptId',
@@ -263,6 +268,7 @@ export class AdminPaymentsController {
   }
 
   @Post('orders/:orderId/collect-cod')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @RequirePermissions('payment:collect')
   @ApiParam({
     name: 'orderId',

@@ -4,15 +4,30 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { RedisService } from './../src/redis/redis.service.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: { $queryRaw: ReturnType<typeof vi.fn> };
+  let redis: {
+    onModuleInit: ReturnType<typeof vi.fn>;
+    onModuleDestroy: ReturnType<typeof vi.fn>;
+    checkConnectivity: ReturnType<typeof vi.fn>;
+    eval: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(async () => {
     process.env.JWT_SECRET ??= 'e2e-health-test-jwt-secret';
     prisma = {
       $queryRaw: vi.fn().mockResolvedValue([{ '?column?': 1 }]),
+    };
+    redis = {
+      onModuleInit: vi.fn().mockResolvedValue(undefined),
+      onModuleDestroy: vi.fn().mockResolvedValue(undefined),
+      checkConnectivity: vi.fn().mockResolvedValue(true),
+      eval: vi.fn().mockResolvedValue([1, 60000, 0, 0]),
+      close: vi.fn().mockResolvedValue(undefined),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -20,6 +35,8 @@ describe('AppController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideProvider(RedisService)
+      .useValue(redis)
       .compile();
 
     app = moduleFixture.createNestApplication();

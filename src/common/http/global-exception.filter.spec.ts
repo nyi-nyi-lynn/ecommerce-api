@@ -1,4 +1,5 @@
-import { ArgumentsHost, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, BadRequestException, HttpStatus } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { MulterError } from 'multer';
 import { GlobalExceptionFilter } from './global-exception.filter.js';
 
@@ -61,6 +62,40 @@ describe('GlobalExceptionFilter (unit)', () => {
         message: 'The uploaded file is invalid.',
         error: 'Bad Request',
         path: '/api/categories',
+      }),
+    );
+  });
+
+  it('formats ThrottlerException as HTTP 429 with the standardized rate-limit message', () => {
+    filter.catch(new ThrottlerException(), host);
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.TOO_MANY_REQUESTS);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        statusCode: 429,
+        message: 'Too many requests. Please try again later.',
+        error: 'Too Many Requests',
+        path: '/api/categories',
+      }),
+    );
+  });
+
+  it('redacts sensitive Redis connection or AUTH details in client exception messages', () => {
+    filter.catch(
+      new BadRequestException(
+        'Failed connecting to redis://:secretpass@127.0.0.1:6379/0',
+      ),
+      host,
+    );
+
+    expect(statusMock).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        statusCode: 400,
+        message: 'The request could not be processed.',
+        error: 'Bad Request',
       }),
     );
   });

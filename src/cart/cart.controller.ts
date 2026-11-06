@@ -15,6 +15,8 @@ import { AddCartItemDto } from './dto/add-cart-item.dto.js';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto.js';
 import { CartService } from './cart.service.js';
 import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { ApiDocumentEndpoint } from '../common/swagger/swagger.decorators.js';
 
 @Controller('cart')
@@ -25,6 +27,7 @@ export class CartController {
   constructor(private readonly cart: CartService) {}
 
   @Get()
+  @Throttle(RATE_LIMIT_POLICIES.CART_READ)
   @ApiDocumentEndpoint({
     summary: 'Get current cart',
     description:
@@ -57,6 +60,7 @@ export class CartController {
   }
 
   @Post('items')
+  @Throttle(RATE_LIMIT_POLICIES.CART_MUTATION)
   @ApiDocumentEndpoint({
     summary: 'Add cart item',
     description:
@@ -83,6 +87,7 @@ export class CartController {
   }
 
   @Patch('items/:productId')
+  @Throttle(RATE_LIMIT_POLICIES.CART_MUTATION)
   @ApiParam({
     name: 'productId',
     description: 'Product UUID.',
@@ -116,6 +121,7 @@ export class CartController {
   }
 
   @Delete('items/:productId')
+  @Throttle(RATE_LIMIT_POLICIES.CART_MUTATION)
   @ApiParam({
     name: 'productId',
     description: 'Product UUID.',
@@ -141,6 +147,7 @@ export class CartController {
   }
 
   @Delete()
+  @Throttle(RATE_LIMIT_POLICIES.CART_CLEAR)
   @ApiDocumentEndpoint({
     summary: 'Clear cart',
     description:

@@ -31,6 +31,8 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
 
 const CATEGORY_ID_EXAMPLE = '550e8400-e29b-41d4-a716-446655440000';
@@ -85,6 +87,7 @@ export class CategoriesController {
 
   // POST /api/categories
   @Post()
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('category:create')
   @ApiBearerAuth()
@@ -124,6 +127,7 @@ export class CategoriesController {
 
   // PATCH /api/categories/:id
   @Patch(':id')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('category:update')
   @ApiBearerAuth()
@@ -170,6 +174,7 @@ export class CategoriesController {
 
   // DELETE /api/categories/:id
   @Delete(':id')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('category:delete')
   @ApiBearerAuth()

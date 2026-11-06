@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from './prisma/prisma.service.js';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiDocumentEndpoint } from './common/swagger/swagger.decorators.js';
@@ -9,6 +10,7 @@ export class AppController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get('health/db')
+  @SkipThrottle()
   @ApiDocumentEndpoint({
     summary: 'Check database readiness',
     description:

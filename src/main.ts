@@ -1,12 +1,26 @@
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule, ObserveInstrument } from './app.module.js';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
+function resolveTrustProxy(raw: string | undefined): boolean | number | string {
+  if (!raw || raw.trim() === '' || raw.trim().toLowerCase() === 'false') {
+    return false;
+  }
+  const trimmed = raw.trim();
+  const hopCount = Number(trimmed);
+  if (Number.isInteger(hopCount) && hopCount > 0) {
+    return hopCount;
+  }
+  return trimmed;
+}
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     instrument: ObserveInstrument,
   });
+  app.set('trust proxy', resolveTrustProxy(process.env.TRUST_PROXY));
   app.enableCors();
   app.setGlobalPrefix('api');
   app.useGlobalPipes(

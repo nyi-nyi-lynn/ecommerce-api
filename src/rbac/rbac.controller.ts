@@ -19,6 +19,8 @@ import { UpdateRoleDto } from './dto/update-role.dto.js';
 import { SetRolePermissionsDto } from './dto/set-role-permissions.dto.js';
 import { AssignUserRoleDto } from './dto/assign-user-role.dto.js';
 import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
@@ -43,6 +45,7 @@ const ROLE_EXAMPLE = {
 };
 
 @Controller('rbac')
+@Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @RequirePermissions('role:manage')
 @ApiTags('RBAC')

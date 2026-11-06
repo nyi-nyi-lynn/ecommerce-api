@@ -13,6 +13,8 @@ import { LoginDto } from './dto/login.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { ApiDocumentEndpoint } from '../common/swagger/swagger.decorators.js';
 import { CurrentUser } from './decorators/current-user.decorator.js';
 
@@ -38,6 +40,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_STRICT)
   @ApiDocumentEndpoint({
     summary: 'Register a customer',
     description:
@@ -51,6 +54,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_STRICT)
   @ApiDocumentEndpoint({
     summary: 'Log in',
     description:
@@ -64,6 +68,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_SESSION)
   @ApiDocumentEndpoint({
     summary: 'Refresh tokens',
     description: 'Rotates a valid refresh token and returns a new token pair.',
@@ -76,6 +81,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_SESSION)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiDocumentEndpoint({
     summary: 'Log out',

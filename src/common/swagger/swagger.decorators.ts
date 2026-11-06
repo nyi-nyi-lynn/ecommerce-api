@@ -55,6 +55,7 @@ const statusDescriptions: Record<number, string> = {
   404: 'The requested resource was not found.',
   409: 'The request conflicts with the current resource state.',
   422: 'The request is well-formed but cannot be processed.',
+  429: 'Too many requests. Please try again later.',
   500: 'Internal server error',
 };
 
@@ -95,6 +96,7 @@ export function ApiDocumentEndpoint(options: DocumentEndpointOptions) {
               404: 'Not Found',
               409: 'Conflict',
               422: 'Unprocessable Entity',
+              429: 'Too Many Requests',
               500: 'Internal Server Error',
             } as Record<number, string>
           )[status] ?? 'Error',
