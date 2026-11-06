@@ -27,6 +27,12 @@ enum PaymentMethod {
   GATEWAY
 }
 
+enum OrderPaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
 enum PaymentStatus {
   PENDING
   UNDER_REVIEW
@@ -212,10 +218,10 @@ model Order {
   orderNumber     String        @unique @db.VarChar(50)
   userId          String        @db.Uuid
   totalAmount     Decimal       @db.Decimal(12, 2)
-  status          OrderStatus   @default(PENDING)
-  paymentMethod   PaymentMethod @default(COD)
-  paymentStatus   PaymentStatus @default(PENDING)
-  shippingName    String        @db.VarChar(100)
+  status          OrderStatus        @default(PENDING)
+  paymentMethod   PaymentMethod      @default(COD)
+  paymentStatus   OrderPaymentStatus @default(PENDING)
+  shippingName    String             @db.VarChar(100)
   shippingPhone   String        @db.VarChar(30)
   shippingAddress String        @db.Text
   note            String?
@@ -257,6 +263,7 @@ model PaymentAttempt {
   currency             String        @default("MMK") @db.Char(3)
   transactionReference String?       @db.VarChar(255)
   proofUrl             String?       @db.Text
+  imagePublicId        String?       @db.Text
   rejectionReason      String?       @db.Text
   submittedAt          DateTime?
   reviewedAt           DateTime?

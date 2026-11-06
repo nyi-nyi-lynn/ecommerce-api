@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -6,28 +7,44 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import multer from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { RequirePermissions } from '../rbac/permissions.decorator.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { RejectPaymentDto } from './dto/reject-payment.dto.js';
-import { SubmitManualPaymentDto } from './dto/submit-manual-payment.dto.js';
-import { ApiBearerAuth, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  MANUAL_PAYMENT_PROVIDERS,
+  SubmitManualPaymentDto,
+} from './dto/submit-manual-payment.dto.js';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiExtraModels,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
 import { PaymentsService } from './payments.service.js';
 
 @Controller('payments')
 @UseGuards(JwtAuthGuard)
 @ApiTags('Customer Payments')
 @ApiBearerAuth()
+@ApiExtraModels(SubmitManualPaymentDto)
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
@@ -54,7 +71,10 @@ export class PaymentsController {
         amount: '259.98',
         currency: 'USD',
         providerRef: 'TXN-98451203',
-        proofUrl: 'https://cdn.example.com/receipts/txn-98451203.png',
+        proofUrl:
+          'https://res.cloudinary.com/demo/image/upload/ecommerce/payments/users/880e8400-e29b-41d4-a716-446655440003/proof.png',
+        imagePublicId:
+          'ecommerce/payments/users/880e8400-e29b-41d4-a716-446655440003/proof',
         rejectionReason: null,
         submittedAt: '2026-01-01T00:00:00.000Z',
         reviewedAt: null,
@@ -80,10 +100,40 @@ export class PaymentsController {
     format: 'uuid',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['providerCode', 'transactionReference', 'image'],
+      properties: {
+        providerCode: {
+          type: 'string',
+          enum: [...MANUAL_PAYMENT_PROVIDERS],
+          example: 'KBZ_PAY',
+        },
+        transactionReference: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 255,
+          example: 'TXN-98451203',
+        },
+        image: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
+    }),
+  )
   @ApiDocumentEndpoint({
     summary: 'Submit manual payment',
     description:
-      'Submits a supported provider reference and optional proof URL for the authenticated customer’s MANUAL order. The server determines amount and currency; manual payment remains under review until staff approval.',
+      'Submits a supported provider reference and payment proof image for the authenticated customer’s MANUAL order. The server determines amount and currency; manual payment remains under review until staff approval.',
     successStatus: 201,
     errors: [400, 401, 404, 409, 500],
     successExample: {
@@ -95,7 +145,10 @@ export class PaymentsController {
       amount: '259.98',
       currency: 'USD',
       providerRef: 'TXN-98451203',
-      proofUrl: 'https://cdn.example.com/receipts/txn-98451203.png',
+      proofUrl:
+        'https://res.cloudinary.com/demo/image/upload/ecommerce/payments/users/880e8400-e29b-41d4-a716-446655440003/proof.png',
+      imagePublicId:
+        'ecommerce/payments/users/880e8400-e29b-41d4-a716-446655440003/proof',
       rejectionReason: null,
       submittedAt: '2026-01-01T00:00:00.000Z',
       reviewedAt: null,
@@ -118,8 +171,12 @@ export class PaymentsController {
     @CurrentUser('sub') userId: string,
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() dto: SubmitManualPaymentDto,
+    @UploadedFile() image: Express.Multer.File | undefined,
   ) {
-    return this.payments.submitManualPayment(userId, orderId, dto);
+    if (!image) {
+      throw new BadRequestException('Payment proof image file is required.');
+    }
+    return this.payments.submitManualPayment(userId, orderId, dto, image);
   }
 }
 

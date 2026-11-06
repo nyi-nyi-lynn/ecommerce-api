@@ -13,6 +13,8 @@ import { CLOUDINARY } from './cloudinary.provider.js';
 
 export const PRODUCT_IMAGE_FOLDER = 'ecommerce/products';
 export const CATEGORY_IMAGE_FOLDER = 'ecommerce/categories';
+export const PAYMENT_IMAGE_FOLDER = 'ecommerce/payments';
+export const PAYMENT_PROOF_IMAGE_FOLDER = PAYMENT_IMAGE_FOLDER;
 export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export type ProductImageAsset = Pick<
@@ -73,6 +75,39 @@ export class UploadsService {
 
   isOwnedCategoryAsset(publicId: string) {
     return this.isOwnedAsset(publicId, CATEGORY_IMAGE_FOLDER);
+  }
+
+  async uploadPaymentProofImage(
+    file: Express.Multer.File | undefined,
+    userId: string,
+  ) {
+    const normalizedUserId = userId?.trim();
+    if (!normalizedUserId) {
+      throw new BadRequestException(
+        'User ID is required for payment proof image upload.',
+      );
+    }
+    return this.uploadImage(
+      file,
+      `${PAYMENT_IMAGE_FOLDER}/users/${normalizedUserId}`,
+      'Payment proof',
+    );
+  }
+
+  async deletePaymentProofImage(publicId: string) {
+    if (!this.isOwnedPaymentProofAsset(publicId)) return false;
+    return this.deleteOwnedImage(
+      publicId,
+      PAYMENT_IMAGE_FOLDER,
+      'payment proof',
+    );
+  }
+
+  isOwnedPaymentProofAsset(publicId: string) {
+    return (
+      this.isOwnedAsset(publicId, PAYMENT_IMAGE_FOLDER) &&
+      publicId.trim().startsWith(`${PAYMENT_IMAGE_FOLDER}/users/`)
+    );
   }
 
   private isOwnedAsset(publicId: string, baseFolder: string): boolean {

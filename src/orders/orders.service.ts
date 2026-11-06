@@ -11,12 +11,18 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  OrderPaymentStatus,
   Prisma,
 } from '../generated/prisma/client.js';
 import {
   buildPaginatedResponse,
   resolvePaginationParams,
 } from '../common/pagination/pagination.util.js';
+import {
+  isOpenAttemptStatus,
+  ORDER_PAYMENT_STATUS,
+  orderPaymentStatusAfterCancel,
+} from '../payments/payment-status.rules.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StockService } from '../stock/stock.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -28,11 +34,6 @@ const MAX_INT = 2_147_483_647;
 const MAX_ORDER_TOTAL = new Prisma.Decimal('9999999999.99');
 
 export const ORDER_CANCELLED_PAYMENT_EVENT = 'ORDER_CANCELLED';
-
-const CANCELLABLE_PAYMENT_STATUSES: ReadonlySet<PaymentStatus> = new Set([
-  PaymentStatus.PENDING,
-  PaymentStatus.UNDER_REVIEW,
-]);
 
 const orderDetailSelect = {
   id: true,
@@ -223,7 +224,7 @@ export class OrdersService {
         totalAmount,
         status: OrderStatus.PENDING,
         paymentMethod: dto.paymentMethod ?? PaymentMethod.COD,
-        paymentStatus: PaymentStatus.PENDING,
+        paymentStatus: ORDER_PAYMENT_STATUS.UNPAID,
         shippingName: dto.shippingName.trim(),
         shippingPhone: dto.shippingPhone.trim(),
         shippingAddress: dto.shippingAddress.trim(),
@@ -323,15 +324,9 @@ export class OrdersService {
             'Customers may cancel only pending orders.',
           );
         }
-        if (order.paymentStatus === PaymentStatus.PAID) {
-          throw new ConflictException(
-            'Paid orders cannot be cancelled without refund support.',
-          );
-        }
         await this.cancelAndRestore(tx, order, userId, {
           userId,
           status: OrderStatus.PENDING,
-          paymentStatus: { not: PaymentStatus.PAID },
         });
         return tx.order.findUniqueOrThrow({
           where: { id: orderId },
@@ -366,19 +361,9 @@ export class OrdersService {
           );
         }
 
-        if (
-          dto.status === OrderStatus.CANCELLED &&
-          order.paymentStatus === PaymentStatus.PAID
-        ) {
-          throw new ConflictException(
-            'Paid orders cannot be cancelled without refund support.',
-          );
-        }
-
         if (dto.status === OrderStatus.CANCELLED) {
           await this.cancelAndRestore(tx, order, actorId, {
             status: order.status,
-            paymentStatus: { not: PaymentStatus.PAID },
           });
         } else {
           const updated = await tx.order.updateMany({
@@ -424,14 +409,13 @@ export class OrdersService {
     order: {
       id: string;
       status: OrderStatus;
-      paymentStatus: PaymentStatus;
+      paymentStatus: OrderPaymentStatus;
       items: Array<{ productId: string; quantity: number }>;
     },
     actorId: string,
     ownerFilter: {
       userId?: string;
       status: OrderStatus;
-      paymentStatus?: { not: PaymentStatus };
     },
   ) {
     const attempts = await tx.paymentAttempt.findMany({
@@ -440,23 +424,26 @@ export class OrdersService {
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
-    if (attempts.some((attempt) => attempt.status === PaymentStatus.PAID)) {
+    // One rule for every cancellation path: a settled payment blocks
+    // cancellation, whether it is recorded on the Order or on an attempt.
+    if (
+      order.paymentStatus === ORDER_PAYMENT_STATUS.PAID ||
+      attempts.some((attempt) => attempt.status === PaymentStatus.PAID)
+    ) {
       throw new ConflictException(
         'Paid orders cannot be cancelled without refund support.',
       );
     }
 
-    const nextOrderPaymentStatus = CANCELLABLE_PAYMENT_STATUSES.has(
-      order.paymentStatus,
-    )
-      ? PaymentStatus.CANCELLED
-      : order.paymentStatus;
-
     const updated = await tx.order.updateMany({
-      where: { id: order.id, ...ownerFilter },
+      where: {
+        id: order.id,
+        ...ownerFilter,
+        paymentStatus: { not: ORDER_PAYMENT_STATUS.PAID },
+      },
       data: {
         status: OrderStatus.CANCELLED,
-        paymentStatus: nextOrderPaymentStatus,
+        paymentStatus: orderPaymentStatusAfterCancel(order.paymentStatus),
       },
     });
     if (updated.count !== 1) {
@@ -466,7 +453,7 @@ export class OrdersService {
     }
 
     for (const attempt of attempts) {
-      if (!CANCELLABLE_PAYMENT_STATUSES.has(attempt.status)) {
+      if (!isOpenAttemptStatus(attempt.status)) {
         continue;
       }
       const updatedAttempt = await tx.paymentAttempt.updateMany({
