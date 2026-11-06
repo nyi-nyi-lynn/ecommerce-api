@@ -19,6 +19,11 @@ import {
   resolvePaginationParams,
 } from '../common/pagination/pagination.util.js';
 import { UploadsService } from '../modules/uploads/uploads.service.js';
+import {
+  BLOCKING_ATTEMPT_STATUSES,
+  ORDER_PAYMENT_STATUS,
+  OrderPaymentStatus,
+} from './payment-status.rules.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { RejectPaymentDto } from './dto/reject-payment.dto.js';
@@ -267,7 +272,7 @@ export class PaymentsService {
         }
         if (
           order.status === OrderStatus.CANCELLED ||
-          order.paymentStatus === PaymentStatus.PAID
+          order.paymentStatus === OrderPaymentStatus.PAID
         ) {
           throw new ConflictException(
             'The order is not eligible for payment approval.',
@@ -291,18 +296,9 @@ export class PaymentsService {
           throw new ConflictException(
             'The payment attempt changed concurrently.',
           );
-        const updatedOrder = await tx.order.updateMany({
-          where: {
-            id: attempt.orderId,
-            paymentStatus: { not: PaymentStatus.PAID },
-            status: { not: OrderStatus.CANCELLED },
-          },
-          data: { paymentStatus: PaymentStatus.PAID },
+        await this.markOrderPaid(tx, attempt.orderId, {
+          status: { not: OrderStatus.CANCELLED },
         });
-        if (updatedOrder.count !== 1)
-          throw new ConflictException(
-            'The order payment status changed concurrently.',
-          );
         await tx.paymentEvent.create({
           data: {
             paymentAttemptId: attemptId,
@@ -407,22 +403,13 @@ export class PaymentsService {
           throw new ConflictException(
             'COD can be collected only for delivered orders.',
           );
-        if (order.paymentStatus === PaymentStatus.PAID)
+        if (order.paymentStatus === OrderPaymentStatus.PAID)
           throw new ConflictException('This order is already paid.');
         const now = new Date();
-        const updated = await tx.order.updateMany({
-          where: {
-            id: orderId,
-            status: OrderStatus.DELIVERED,
-            paymentMethod: PaymentMethod.COD,
-            paymentStatus: { not: PaymentStatus.PAID },
-          },
-          data: { paymentStatus: PaymentStatus.PAID },
+        await this.markOrderPaid(tx, orderId, {
+          status: OrderStatus.DELIVERED,
+          paymentMethod: PaymentMethod.COD,
         });
-        if (updated.count !== 1)
-          throw new ConflictException(
-            'The order payment status changed concurrently.',
-          );
         const attempt = await tx.paymentAttempt.create({
           data: {
             orderId,
@@ -494,7 +481,7 @@ export class PaymentsService {
     }
     if (
       order.status === OrderStatus.CANCELLED ||
-      order.paymentStatus === PaymentStatus.PAID
+      order.paymentStatus === OrderPaymentStatus.PAID
     ) {
       throw new ConflictException(
         'This order is not eligible for a payment attempt.',
@@ -503,13 +490,7 @@ export class PaymentsService {
     const existing = await client.paymentAttempt.findFirst({
       where: {
         orderId,
-        status: {
-          in: [
-            PaymentStatus.PENDING,
-            PaymentStatus.UNDER_REVIEW,
-            PaymentStatus.PAID,
-          ],
-        },
+        status: { in: [...BLOCKING_ATTEMPT_STATUSES] },
       },
       select: { id: true, status: true },
     });
@@ -519,6 +500,31 @@ export class PaymentsService {
       );
     }
     return order;
+  }
+
+  /**
+   * The only place that settles Order.paymentStatus. Callers must hold the
+   * Order row lock and write the matching attempt/event in the same
+   * transaction; the guarded updateMany rejects a double settlement.
+   */
+  private async markOrderPaid(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    guard: Prisma.OrderWhereInput,
+  ) {
+    const updated = await tx.order.updateMany({
+      where: {
+        id: orderId,
+        ...guard,
+        paymentStatus: { not: ORDER_PAYMENT_STATUS.PAID },
+      },
+      data: { paymentStatus: ORDER_PAYMENT_STATUS.PAID },
+    });
+    if (updated.count !== 1) {
+      throw new ConflictException(
+        'The order payment status changed concurrently.',
+      );
+    }
   }
 
   private validateId(id: string) {

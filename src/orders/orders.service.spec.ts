@@ -8,6 +8,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  OrderPaymentStatus,
   Prisma,
 } from '../generated/prisma/client.js';
 import {
@@ -591,7 +592,7 @@ describe('OrdersService', () => {
     await service.create(U7, dto([{ productId: P1, quantity: 3 }]) as any);
     const cancelled = await service.cancelMine(U7, ORDER_1);
     expect(cancelled.status).toBe(OrderStatus.CANCELLED);
-    expect(cancelled.paymentStatus).toBe(PaymentStatus.CANCELLED);
+    expect(cancelled.paymentStatus).toBe(OrderPaymentStatus.CANCELLED);
     expect(tx.$queryRaw).toHaveBeenCalled();
     expect(stock.restoreForOrder).toHaveBeenCalledOnce();
     expect(tx.paymentEvent.create).not.toHaveBeenCalled();
@@ -619,7 +620,7 @@ describe('OrdersService', () => {
 
     const cancelled = await service.cancelMine(U7, ORDER_1);
     expect(cancelled.status).toBe(OrderStatus.CANCELLED);
-    expect(cancelled.paymentStatus).toBe(PaymentStatus.CANCELLED);
+    expect(cancelled.paymentStatus).toBe(OrderPaymentStatus.CANCELLED);
     expect(paymentAttempts[0]?.status).toBe(PaymentStatus.CANCELLED);
     expect(paymentEvents).toEqual([
       expect.objectContaining({
@@ -652,7 +653,7 @@ describe('OrdersService', () => {
       U99,
     );
     expect(cancelled.status).toBe(OrderStatus.CANCELLED);
-    expect(cancelled.paymentStatus).toBe(PaymentStatus.CANCELLED);
+    expect(cancelled.paymentStatus).toBe(OrderPaymentStatus.CANCELLED);
     expect(paymentAttempts[0]?.status).toBe(PaymentStatus.CANCELLED);
     expect(paymentEvents).toEqual([
       expect.objectContaining({
@@ -768,7 +769,7 @@ describe('OrdersService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     // Also blocks cancellation if a PaymentAttempt has status PAID
-    orders[0].paymentStatus = PaymentStatus.PENDING;
+    orders[0].paymentStatus = OrderPaymentStatus.PENDING;
     paymentAttempts.push({
       id: ATTEMPT_70,
       orderId: ORDER_1,

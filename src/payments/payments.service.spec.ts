@@ -9,6 +9,7 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
+  OrderPaymentStatus,
   Prisma,
 } from '../generated/prisma/client.js';
 import { PaymentsService } from './payments.service.js';
@@ -159,7 +160,7 @@ describe('PaymentsService', () => {
       proofUrl: UPLOADED_PROOF_URL,
       imagePublicId: UPLOADED_PUBLIC_ID,
     });
-    expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
+    expect(order.paymentStatus).toBe(OrderPaymentStatus.PENDING);
     expect(tx.paymentEvent.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         eventType: 'MANUAL_SUBMITTED',
@@ -215,7 +216,7 @@ describe('PaymentsService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     order.status = OrderStatus.DELIVERED;
-    order.paymentStatus = PaymentStatus.PAID;
+    order.paymentStatus = OrderPaymentStatus.PAID;
     await expect(
       service.submitManualPayment(
         CUSTOMER_ID,
@@ -228,7 +229,7 @@ describe('PaymentsService', () => {
       ),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    order.paymentStatus = PaymentStatus.PENDING;
+    order.paymentStatus = OrderPaymentStatus.PENDING;
     attempt = { id: EXISTING_ATTEMPT_ID, status: PaymentStatus.UNDER_REVIEW };
     await expect(
       service.submitManualPayment(
@@ -377,7 +378,7 @@ describe('PaymentsService', () => {
     const result = await service.approveManualPayment(ATTEMPT_ID, ADMIN_ID);
     expect(result.status).toBe(PaymentStatus.PAID);
     expect(attempt.reviewedById).toBe(ADMIN_ID);
-    expect(order.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(order.paymentStatus).toBe(OrderPaymentStatus.PAID);
     expect(uploads.deletePaymentProofImage).not.toHaveBeenCalled();
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -406,7 +407,7 @@ describe('PaymentsService', () => {
     expect(tx.order.updateMany).not.toHaveBeenCalled();
     expect(tx.paymentEvent.create).not.toHaveBeenCalled();
     expect(attempt.status).toBe(PaymentStatus.UNDER_REVIEW);
-    expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
+    expect(order.paymentStatus).toBe(OrderPaymentStatus.PENDING);
   });
 
   it('rejects pending review with the reason, permits a retry, and records audit history', async () => {
