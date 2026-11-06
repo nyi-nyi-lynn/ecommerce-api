@@ -2,9 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
-  UnprocessableEntityException,
+  PayloadTooLargeException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   OrderStatus,
   PaymentMethod,
@@ -20,6 +20,17 @@ describe('PaymentsService', () => {
   const ADMIN_ID = '00000000-0000-4000-8000-000000000002';
   const ATTEMPT_ID = '00000000-0000-4000-8000-000000000009';
   const EXISTING_ATTEMPT_ID = '00000000-0000-4000-8000-000000000002';
+  const UPLOADED_PROOF_URL =
+    'https://res.cloudinary.com/demo/image/upload/ecommerce/payments/users/00000000-0000-4000-8000-000000000007/proof.png';
+  const UPLOADED_PUBLIC_ID = `ecommerce/payments/users/${CUSTOMER_ID}/proof`;
+
+  const mockFile = {
+    fieldname: 'image',
+    originalname: 'proof.png',
+    mimetype: 'image/png',
+    size: 1024,
+    buffer: Buffer.from('proof-image'),
+  } as Express.Multer.File;
 
   let service: PaymentsService;
   let prisma: any;
@@ -27,7 +38,10 @@ describe('PaymentsService', () => {
   let order: any;
   let attempt: any;
   let events: any[];
-  let config: any;
+  let uploads: {
+    uploadPaymentProofImage: ReturnType<typeof vi.fn>;
+    deletePaymentProofImage: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     order = {
@@ -40,7 +54,13 @@ describe('PaymentsService', () => {
     };
     attempt = null;
     events = [];
-    config = { get: vi.fn(() => 'proof.example.com') };
+    uploads = {
+      uploadPaymentProofImage: vi.fn().mockResolvedValue({
+        secure_url: UPLOADED_PROOF_URL,
+        public_id: UPLOADED_PUBLIC_ID,
+      }),
+      deletePaymentProofImage: vi.fn().mockResolvedValue(true),
+    };
     tx = {
       $queryRaw: vi.fn(async () => [{ id: order.id }]),
       order: {
@@ -106,20 +126,29 @@ describe('PaymentsService', () => {
       $transaction: vi.fn(async (callback) => callback(tx)),
       order: { findFirst: tx.order.findFirst },
       paymentAttempt: {
+        findFirst: tx.paymentAttempt.findFirst,
         findMany: tx.paymentAttempt.findMany,
         count: tx.paymentAttempt.count,
         findUnique: vi.fn(async () => null),
       },
     };
-    service = new PaymentsService(prisma, config as ConfigService);
+    service = new PaymentsService(prisma, uploads as any);
   });
 
-  it('submits a server-priced manual attempt and appends an audit event', async () => {
-    const result = await service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-      providerCode: 'KBZ_PAY',
-      transactionReference: ' TX-1 ',
-      proofUrl: 'https://proof.example.com/receipt/1',
-    });
+  it('uploads payment proof via shared UploadsService and persists proofUrl and imagePublicId', async () => {
+    const result = await service.submitManualPayment(
+      CUSTOMER_ID,
+      ORDER_ID,
+      {
+        providerCode: 'KBZ_PAY',
+        transactionReference: ' TX-1 ',
+      },
+      mockFile,
+    );
+    expect(uploads.uploadPaymentProofImage).toHaveBeenCalledWith(
+      mockFile,
+      CUSTOMER_ID,
+    );
     expect(result).toMatchObject({
       orderId: ORDER_ID,
       method: PaymentMethod.MANUAL,
@@ -127,6 +156,8 @@ describe('PaymentsService', () => {
       amount: new Prisma.Decimal('1250.50'),
       currency: 'MMK',
       transactionReference: 'TX-1',
+      proofUrl: UPLOADED_PROOF_URL,
+      imagePublicId: UPLOADED_PUBLIC_ID,
     });
     expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
     expect(tx.paymentEvent.create).toHaveBeenCalledWith({
@@ -140,51 +171,200 @@ describe('PaymentsService', () => {
     expect(tx.$queryRaw).toHaveBeenCalledOnce();
   });
 
-  it('hides another customer order and rejects wrong method, cancelled and duplicate attempts', async () => {
+  it('hides another customer order and rejects wrong method, cancelled, paid, and duplicate attempts without uploading', async () => {
     await expect(
       service.getCustomerOrderPayments(OTHER_CUSTOMER_ID, ORDER_ID),
     ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.submitManualPayment(
+        OTHER_CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
     order.paymentMethod = PaymentMethod.COD;
     await expect(
-      service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-        providerCode: 'KBZ_PAY',
-        transactionReference: 'X',
-      } as any),
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
+
     order.paymentMethod = PaymentMethod.MANUAL;
     order.status = OrderStatus.CANCELLED;
     await expect(
-      service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-        providerCode: 'KBZ_PAY',
-        transactionReference: 'X',
-      } as any),
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
+
     order.status = OrderStatus.DELIVERED;
+    order.paymentStatus = PaymentStatus.PAID;
+    await expect(
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    order.paymentStatus = PaymentStatus.PENDING;
     attempt = { id: EXISTING_ATTEMPT_ID, status: PaymentStatus.UNDER_REVIEW };
     await expect(
-      service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-        providerCode: 'KBZ_PAY',
-        transactionReference: 'X',
-      } as any),
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(uploads.uploadPaymentProofImage).not.toHaveBeenCalled();
   });
 
-  it('requires an exact HTTPS allowlisted host for proof URLs', async () => {
+  it('validates missing image, invalid file type, oversized file, and missing UploadsService', async () => {
     await expect(
-      service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-        providerCode: 'KBZ_PAY',
-        transactionReference: 'X',
-        proofUrl: 'http://proof.example.com/a',
-      } as any),
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        undefined,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
-    config.get.mockReturnValue(undefined);
+    expect(uploads.uploadPaymentProofImage).not.toHaveBeenCalled();
+
+    uploads.uploadPaymentProofImage.mockRejectedValueOnce(
+      new BadRequestException(
+        'Only JPEG, PNG, WebP, and AVIF payment proof images are allowed.',
+      ),
+    );
     await expect(
-      service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-        providerCode: 'KBZ_PAY',
-        transactionReference: 'Y',
-        proofUrl: 'https://proof.example.com/a',
-      } as any),
-    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    uploads.uploadPaymentProofImage.mockRejectedValueOnce(
+      new PayloadTooLargeException(
+        'The payment proof image must be 5 MB or smaller.',
+      ),
+    );
+    await expect(
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+
+    const serviceWithoutUploads = new PaymentsService(prisma, undefined);
+    await expect(
+      serviceWithoutUploads.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('handles Cloudinary upload failure and cleans up uploaded proof image when database persistence fails', async () => {
+    uploads.uploadPaymentProofImage.mockRejectedValueOnce(
+      new ServiceUnavailableException(
+        'Payment proof image upload could not be completed.',
+      ),
+    );
+    await expect(
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+
+    tx.paymentAttempt.create.mockRejectedValueOnce(
+      new Error('database write failed'),
+    );
+    await expect(
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'X',
+        },
+        mockFile,
+      ),
+    ).rejects.toThrow('database write failed');
+    expect(uploads.deletePaymentProofImage).toHaveBeenCalledWith(
+      UPLOADED_PUBLIC_ID,
+    );
+
+    uploads.deletePaymentProofImage.mockResolvedValueOnce(false);
+    const logSpy = vi
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+    tx.paymentEvent.create.mockRejectedValueOnce(
+      new Error('event insert failed'),
+    );
+    await expect(
+      service.submitManualPayment(
+        CUSTOMER_ID,
+        ORDER_ID,
+        {
+          providerCode: 'KBZ_PAY',
+          transactionReference: 'Y',
+        },
+        mockFile,
+      ),
+    ).rejects.toThrow('event insert failed');
+    expect(logSpy).toHaveBeenCalledWith(
+      `Cloudinary payment proof image cleanup failed for order ${ORDER_ID} and public ID ${UPLOADED_PUBLIC_ID}.`,
+    );
   });
 
   it('approves a pending review atomically and records a transition event', async () => {
@@ -198,6 +378,7 @@ describe('PaymentsService', () => {
     expect(result.status).toBe(PaymentStatus.PAID);
     expect(attempt.reviewedById).toBe(ADMIN_ID);
     expect(order.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(uploads.deletePaymentProofImage).not.toHaveBeenCalled();
     expect(events).toContainEqual(
       expect.objectContaining({
         eventType: 'MANUAL_APPROVED',
@@ -240,6 +421,7 @@ describe('PaymentsService', () => {
     });
     expect(rejected.status).toBe(PaymentStatus.REJECTED);
     expect(attempt.rejectionReason).toBe('Invalid transfer reference');
+    expect(uploads.deletePaymentProofImage).not.toHaveBeenCalled();
     expect(events[0]).toMatchObject({
       eventType: 'MANUAL_REJECTED',
       previousStatus: PaymentStatus.UNDER_REVIEW,
@@ -247,10 +429,15 @@ describe('PaymentsService', () => {
       reason: 'Invalid transfer reference',
     });
     attempt = null;
-    const retried = await service.submitManualPayment(CUSTOMER_ID, ORDER_ID, {
-      providerCode: 'WAVE_MONEY',
-      transactionReference: 'TX-2',
-    } as any);
+    const retried = await service.submitManualPayment(
+      CUSTOMER_ID,
+      ORDER_ID,
+      {
+        providerCode: 'WAVE_MONEY',
+        transactionReference: 'TX-2',
+      },
+      mockFile,
+    );
     expect(retried.status).toBe(PaymentStatus.UNDER_REVIEW);
   });
 

@@ -19,6 +19,11 @@ describe('Payments HTTP', () => {
   const ATTEMPT_4 = '00000000-0000-4000-8000-000000000004';
   const ATTEMPT_7 = '00000000-0000-4000-8000-000000000007';
 
+  const validPngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XWJ2AAAAAElFTkSuQmCC',
+    'base64',
+  );
+
   let app: INestApplication;
   let jwt: JwtService;
   let prisma: any;
@@ -44,10 +49,15 @@ describe('Payments HTTP', () => {
         paymentStatus: 'PENDING',
         paymentAttempts: [],
       })),
-      submitManualPayment: vi.fn(async (userId, orderId) => ({
+      submitManualPayment: vi.fn(async (userId, orderId, dto, image) => ({
         id: ATTEMPT_4,
         orderId,
         userId,
+        providerCode: dto.providerCode,
+        transactionReference: dto.transactionReference,
+        proofUrl: `https://res.cloudinary.com/demo/image/upload/ecommerce/payments/users/${userId}/proof.png`,
+        imagePublicId: `ecommerce/payments/users/${userId}/proof`,
+        uploadedOriginalName: image?.originalname,
         status: 'UNDER_REVIEW',
       })),
       listAttempts: vi.fn(async (query) => ({
@@ -100,6 +110,13 @@ describe('Payments HTTP', () => {
     await request(app.getHttpServer())
       .get(`/api/payments/orders/${ORDER_10}`)
       .expect(401);
+    await request(app.getHttpServer())
+      .post(`/api/payments/orders/${ORDER_10}/manual`)
+      .field('providerCode', 'KBZ_PAY')
+      .field('transactionReference', 'TX-1')
+      .attach('image', validPngBuffer, 'proof.png')
+      .expect(401);
+
     const response = await request(app.getHttpServer())
       .get(`/api/payments/orders/${ORDER_10}`)
       .set(as(USER_11))
@@ -115,35 +132,99 @@ describe('Payments HTTP', () => {
     await request(app.getHttpServer())
       .post(`/api/payments/orders/${ORDER_10}/manual`)
       .set(as(USER_11))
-      .send({
-        providerCode: 'KBZ_PAY',
-        transactionReference: 'TX-1',
-        userId: USER_1,
-        amount: 1,
-      })
+      .field('providerCode', 'KBZ_PAY')
+      .field('transactionReference', 'TX-1')
+      .field('userId', USER_1)
+      .field('amount', '1')
+      .attach('image', validPngBuffer, 'proof.png')
       .expect(400);
   });
 
-  it('validates manual payment fields and returns the shared success envelope', async () => {
+  it('validates multipart manual payment fields, image upload constraints, and returns the shared success envelope', async () => {
     const response = await request(app.getHttpServer())
       .post(`/api/payments/orders/${ORDER_10}/manual`)
       .set(as(USER_11))
-      .send({ providerCode: 'KBZ_PAY', transactionReference: 'TX-1' })
+      .field('providerCode', 'KBZ_PAY')
+      .field('transactionReference', '  TX-1  ')
+      .attach('image', validPngBuffer, {
+        filename: 'proof.png',
+        contentType: 'image/png',
+      })
       .expect(201);
     expect(response.body).toMatchObject({
       success: true,
-      data: { status: 'UNDER_REVIEW' },
+      data: {
+        status: 'UNDER_REVIEW',
+        providerCode: 'KBZ_PAY',
+        transactionReference: 'TX-1',
+        proofUrl: `https://res.cloudinary.com/demo/image/upload/ecommerce/payments/users/${USER_11}/proof.png`,
+        imagePublicId: `ecommerce/payments/users/${USER_11}/proof`,
+      },
     });
-    for (const body of [
+    expect(payments.submitManualPayment).toHaveBeenCalledWith(
+      USER_11,
+      ORDER_10,
+      { providerCode: 'KBZ_PAY', transactionReference: 'TX-1' },
+      expect.objectContaining({
+        fieldname: 'image',
+        originalname: 'proof.png',
+      }),
+    );
+
+    // Missing image
+    await request(app.getHttpServer())
+      .post(`/api/payments/orders/${ORDER_10}/manual`)
+      .set(as(USER_11))
+      .field('providerCode', 'KBZ_PAY')
+      .field('transactionReference', 'TX-1')
+      .expect(400);
+
+    // Unexpected file field name
+    const wrongField = await request(app.getHttpServer())
+      .post(`/api/payments/orders/${ORDER_10}/manual`)
+      .set(as(USER_11))
+      .field('providerCode', 'KBZ_PAY')
+      .field('transactionReference', 'TX-1')
+      .attach('proof', validPngBuffer, 'proof.png')
+      .expect(400);
+    expect(wrongField.body).toMatchObject({
+      success: false,
+      statusCode: 400,
+    });
+
+    // Oversized file (> 5 MB)
+    const oversized = await request(app.getHttpServer())
+      .post(`/api/payments/orders/${ORDER_10}/manual`)
+      .set(as(USER_11))
+      .field('providerCode', 'KBZ_PAY')
+      .field('transactionReference', 'TX-1')
+      .attach('image', Buffer.alloc(5 * 1024 * 1024 + 1), 'oversized.png')
+      .expect(413);
+    expect(oversized.body).toMatchObject({
+      success: false,
+      statusCode: 413,
+    });
+
+    // Rejects invalid DTO fields or external proofUrl
+    for (const fields of [
       { providerCode: 'UNKNOWN', transactionReference: 'X' },
       { providerCode: 'KBZ_PAY', transactionReference: '' },
-      { providerCode: 'KBZ_PAY', transactionReference: 'X', amount: 1 },
-    ])
-      await request(app.getHttpServer())
+      { providerCode: 'KBZ_PAY', transactionReference: 'X', amount: '1' },
+      {
+        providerCode: 'KBZ_PAY',
+        transactionReference: 'X',
+        proofUrl: 'https://evil.example.com/proof.png',
+      },
+    ]) {
+      let req = request(app.getHttpServer())
         .post(`/api/payments/orders/${ORDER_10}/manual`)
-        .set(as(USER_11))
-        .send(body)
-        .expect(400);
+        .set(as(USER_11));
+      for (const [k, v] of Object.entries(fields)) {
+        req = req.field(k, String(v));
+      }
+      await req.attach('image', validPngBuffer, 'proof.png').expect(400);
+    }
+
     expect(payments.submitManualPayment).toHaveBeenCalledTimes(1);
   });
 

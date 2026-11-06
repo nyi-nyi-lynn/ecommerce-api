@@ -2,10 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
-  UnprocessableEntityException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { isUUID } from 'class-validator';
 import {
   OrderStatus,
@@ -17,6 +18,7 @@ import {
   buildPaginatedResponse,
   resolvePaginationParams,
 } from '../common/pagination/pagination.util.js';
+import { UploadsService } from '../modules/uploads/uploads.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { QueryPaymentsDto } from './dto/query-payments.dto.js';
 import { RejectPaymentDto } from './dto/reject-payment.dto.js';
@@ -31,6 +33,8 @@ const attemptSelect = {
   amount: true,
   currency: true,
   transactionReference: true,
+  proofUrl: true,
+  imagePublicId: true,
   rejectionReason: true,
   submittedAt: true,
   reviewedAt: true,
@@ -52,9 +56,11 @@ const attemptSelect = {
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    @Optional() private readonly uploads?: UploadsService,
   ) {}
 
   async getCustomerOrderPayments(userId: string, orderId: string) {
@@ -77,6 +83,8 @@ export class PaymentsService {
             amount: true,
             currency: true,
             transactionReference: true,
+            proofUrl: true,
+            imagePublicId: true,
             rejectionReason: true,
             submittedAt: true,
             reviewedAt: true,
@@ -94,92 +102,87 @@ export class PaymentsService {
     userId: string,
     orderId: string,
     dto: SubmitManualPaymentDto,
+    image?: Express.Multer.File,
   ) {
     this.validateId(orderId);
-    const proofUrl = this.validateProofUrl(dto.proofUrl);
-    return this.prisma.$transaction(
-      async (tx) => {
-        await this.lockOrder(tx, orderId, userId);
-        const order = await tx.order.findFirst({
-          where: { id: orderId, userId },
-          select: {
-            id: true,
-            totalAmount: true,
-            status: true,
-            paymentMethod: true,
-            paymentStatus: true,
-          },
-        });
-        if (!order) throw new NotFoundException('Order not found.');
-        if (order.paymentMethod !== PaymentMethod.MANUAL) {
-          throw new ConflictException(
-            'This order does not use manual payment.',
-          );
-        }
-        if (
-          order.status === OrderStatus.CANCELLED ||
-          order.paymentStatus === PaymentStatus.PAID
-        ) {
-          throw new ConflictException(
-            'This order is not eligible for a payment attempt.',
-          );
-        }
-        const existing = await tx.paymentAttempt.findFirst({
-          where: {
+    await this.ensureOrderEligibleForManualPayment(
+      this.prisma,
+      orderId,
+      userId,
+    );
+    if (!image) {
+      throw new BadRequestException('Payment proof image file is required.');
+    }
+    if (!this.uploads) {
+      throw new ServiceUnavailableException(
+        'Payment proof image uploads are unavailable.',
+      );
+    }
+
+    const uploaded = await this.uploads.uploadPaymentProofImage(image, userId);
+
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          await this.lockOrder(tx, orderId, userId);
+          const order = await this.ensureOrderEligibleForManualPayment(
+            tx,
             orderId,
-            status: {
-              in: [
-                PaymentStatus.PENDING,
-                PaymentStatus.UNDER_REVIEW,
-                PaymentStatus.PAID,
-              ],
-            },
-          },
-          select: { id: true, status: true },
-        });
-        if (existing)
-          throw new ConflictException(
-            'A payment attempt is already active or paid.',
+            userId,
           );
 
-        const attempt = await tx.paymentAttempt.create({
-          data: {
-            orderId,
-            method: PaymentMethod.MANUAL,
-            providerCode: dto.providerCode,
-            status: PaymentStatus.UNDER_REVIEW,
-            amount: order.totalAmount,
-            currency: 'MMK',
-            transactionReference: dto.transactionReference.trim(),
-            proofUrl,
-            submittedAt: new Date(),
-          },
-          select: {
-            id: true,
-            orderId: true,
-            method: true,
-            providerCode: true,
-            status: true,
-            amount: true,
-            currency: true,
-            transactionReference: true,
-            submittedAt: true,
-            createdAt: true,
-          },
-        });
-        await tx.paymentEvent.create({
-          data: {
-            paymentAttemptId: attempt.id,
-            eventType: 'MANUAL_SUBMITTED',
-            previousStatus: null,
-            newStatus: PaymentStatus.UNDER_REVIEW,
-            actorId: userId,
-          },
-        });
-        return attempt;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
-    );
+          const attempt = await tx.paymentAttempt.create({
+            data: {
+              orderId,
+              method: PaymentMethod.MANUAL,
+              providerCode: dto.providerCode,
+              status: PaymentStatus.UNDER_REVIEW,
+              amount: order.totalAmount,
+              currency: 'MMK',
+              transactionReference: dto.transactionReference.trim(),
+              proofUrl: uploaded.secure_url,
+              imagePublicId: uploaded.public_id,
+              submittedAt: new Date(),
+            },
+            select: {
+              id: true,
+              orderId: true,
+              method: true,
+              providerCode: true,
+              status: true,
+              amount: true,
+              currency: true,
+              transactionReference: true,
+              proofUrl: true,
+              imagePublicId: true,
+              submittedAt: true,
+              createdAt: true,
+            },
+          });
+          await tx.paymentEvent.create({
+            data: {
+              paymentAttemptId: attempt.id,
+              eventType: 'MANUAL_SUBMITTED',
+              previousStatus: null,
+              newStatus: PaymentStatus.UNDER_REVIEW,
+              actorId: userId,
+            },
+          });
+          return attempt;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
+    } catch (error) {
+      const cleanupSucceeded = await this.uploads
+        .deletePaymentProofImage(uploaded.public_id)
+        .catch(() => false);
+      if (cleanupSucceeded === false) {
+        this.logger.error(
+          `Cloudinary payment proof image cleanup failed for order ${orderId} and public ID ${uploaded.public_id}.`,
+        );
+      }
+      throw error;
+    }
   }
 
   async listAttempts(query: QueryPaymentsDto) {
@@ -470,37 +473,56 @@ export class PaymentsService {
     if (!rows[0]) throw new NotFoundException('Order not found.');
   }
 
+  private async ensureOrderEligibleForManualPayment(
+    client: Pick<Prisma.TransactionClient, 'order' | 'paymentAttempt'>,
+    orderId: string,
+    userId: string,
+  ) {
+    const order = await client.order.findFirst({
+      where: { id: orderId, userId },
+      select: {
+        id: true,
+        totalAmount: true,
+        status: true,
+        paymentMethod: true,
+        paymentStatus: true,
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found.');
+    if (order.paymentMethod !== PaymentMethod.MANUAL) {
+      throw new ConflictException('This order does not use manual payment.');
+    }
+    if (
+      order.status === OrderStatus.CANCELLED ||
+      order.paymentStatus === PaymentStatus.PAID
+    ) {
+      throw new ConflictException(
+        'This order is not eligible for a payment attempt.',
+      );
+    }
+    const existing = await client.paymentAttempt.findFirst({
+      where: {
+        orderId,
+        status: {
+          in: [
+            PaymentStatus.PENDING,
+            PaymentStatus.UNDER_REVIEW,
+            PaymentStatus.PAID,
+          ],
+        },
+      },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'A payment attempt is already active or paid.',
+      );
+    }
+    return order;
+  }
+
   private validateId(id: string) {
     if (typeof id !== 'string' || !isUUID(id))
       throw new BadRequestException('A valid ID is required.');
-  }
-
-  private validateProofUrl(value?: string): string | null {
-    if (!value) return null;
-    const allowlist =
-      this.config
-        .get<string>('PAYMENT_PROOF_ALLOWED_HOSTS')
-        ?.split(',')
-        .map((host) => host.trim().toLowerCase())
-        .filter(Boolean) ?? [];
-    if (!allowlist.length)
-      throw new UnprocessableEntityException(
-        'Payment proof URLs are not enabled.',
-      );
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      throw new BadRequestException('A valid proof URL is required.');
-    }
-    if (
-      url.protocol !== 'https:' ||
-      url.username ||
-      url.password ||
-      !allowlist.includes(url.hostname.toLowerCase())
-    ) {
-      throw new BadRequestException('The proof URL host is not approved.');
-    }
-    return url.toString();
   }
 }

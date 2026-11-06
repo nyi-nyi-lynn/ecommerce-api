@@ -257,6 +257,7 @@ model PaymentAttempt {
   currency             String        @default("MMK") @db.Char(3)
   transactionReference String?       @db.VarChar(255)
   proofUrl             String?       @db.Text
+  imagePublicId        String?       @db.Text
   rejectionReason      String?       @db.Text
   submittedAt          DateTime?
   reviewedAt           DateTime?

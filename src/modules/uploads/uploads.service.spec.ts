@@ -234,4 +234,75 @@ describe('UploadsService', () => {
       expect.any(Function),
     );
   });
+
+  it('uploads payment proof images into ecommerce/payments/users/{userId} and validates files', async () => {
+    cloudinary.uploader.upload_stream.mockImplementation(
+      (_options: unknown, callback: (error: null, result: any) => void) => ({
+        end: () =>
+          callback(null, {
+            secure_url:
+              'https://res.cloudinary.com/demo/image/upload/payment-proof.jpg',
+            public_id: `ecommerce/payments/users/${USER_ID}/payment-proof`,
+            format: 'jpg',
+            width: 800,
+            height: 600,
+            bytes: 123,
+          }),
+      }),
+    );
+
+    await expect(
+      service.uploadPaymentProofImage(imageFile(), USER_ID),
+    ).resolves.toEqual({
+      secure_url:
+        'https://res.cloudinary.com/demo/image/upload/payment-proof.jpg',
+      public_id: `ecommerce/payments/users/${USER_ID}/payment-proof`,
+      format: 'jpg',
+      width: 800,
+      height: 600,
+      bytes: 123,
+    });
+    expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folder: `ecommerce/payments/users/${USER_ID}`,
+      }),
+      expect.any(Function),
+    );
+
+    await expect(
+      service.uploadPaymentProofImage(imageFile(), '   '),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.uploadPaymentProofImage(undefined, USER_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.uploadPaymentProofImage(imageFile(5 * 1024 * 1024 + 1), USER_ID),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+  });
+
+  it('deletes user-scoped payment proof images and blocks cross-folder or invalid public IDs', async () => {
+    await expect(
+      service.deletePaymentProofImage(
+        `ecommerce/payments/users/${USER_ID}/proof`,
+      ),
+    ).resolves.toBe(true);
+    expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
+      `ecommerce/payments/users/${USER_ID}/proof`,
+      { resource_type: 'image', invalidate: true },
+    );
+
+    cloudinary.uploader.destroy.mockClear();
+    for (const invalidPublicId of [
+      '',
+      'ecommerce/payments/unscoped',
+      `ecommerce/products/users/${USER_ID}/image`,
+      `ecommerce/categories/users/${USER_ID}/image`,
+      `ecommerce/payments/users/${USER_ID}/../../products/image`,
+    ]) {
+      await expect(
+        service.deletePaymentProofImage(invalidPublicId),
+      ).resolves.toBe(false);
+    }
+    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+  });
 });
