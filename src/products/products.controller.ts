@@ -1,7 +1,11 @@
 import {
   Body,
+  type CallHandler,
   Controller,
+  type ExecutionContext,
   Get,
+  Injectable,
+  type NestInterceptor,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -12,6 +16,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Request } from 'express';
 import multer from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -37,22 +42,66 @@ import { Throttle } from '@nestjs/throttler';
 import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
 
+@Injectable()
+class StripEmptyMultipartFieldsInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler) {
+    const request = context.switchToHttp().getRequest<Request>();
+    const contentType = request.headers?.['content-type'] ?? '';
+    if (
+      contentType.toLowerCase().includes('multipart/form-data') &&
+      request.body &&
+      typeof request.body === 'object'
+    ) {
+      const body = request.body as Record<string, unknown>;
+      for (const [key, value] of Object.entries(body)) {
+        if (value === '') {
+          delete body[key];
+        }
+      }
+    }
+    return next.handle();
+  }
+}
+
 const PRODUCT_ID_EXAMPLE = '550e8400-e29b-41d4-a716-446655440000';
 const CATEGORY_ID_EXAMPLE = '11111111-1111-4111-8111-111111111111';
+const BRAND_ID_EXAMPLE = '33333333-3333-4333-8333-333333333333';
 
 const PRODUCT_EXAMPLE = {
   id: PRODUCT_ID_EXAMPLE,
-  categoryId: CATEGORY_ID_EXAMPLE,
+  category: {
+    id: CATEGORY_ID_EXAMPLE,
+    name: 'Electronics',
+    slug: 'electronics',
+    imageUrl: null,
+  },
+  brand: {
+    id: BRAND_ID_EXAMPLE,
+    name: 'Samsung',
+    slug: 'samsung',
+    imageUrl: null,
+  },
   name: 'Wireless Headphones',
   slug: 'wireless-headphones',
   sku: 'WH-1000',
   description: 'Over-ear wireless headphones.',
-  price: '125000.00',
+  price: '100000.00',
+  originalPrice: '150000.00',
+  discountPercentage: 33.33,
   imageUrl: null,
   imagePublicId: null,
   isActive: true,
   createdAt: '2026-10-30T08:00:00.000Z',
   updatedAt: '2026-10-30T08:00:00.000Z',
+};
+
+const PUBLIC_PRODUCT_EXAMPLE = {
+  ...PRODUCT_EXAMPLE,
+  stock: {
+    availableQuantity: 20,
+    inStock: true,
+    updatedAt: '2026-10-30T08:00:00.000Z',
+  },
 };
 
 @Controller('products')
@@ -71,11 +120,26 @@ export class ProductsController {
     schema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        slug: { type: 'string' },
-        sku: { type: 'string' },
-        description: { type: 'string' },
-        price: { type: 'number' },
+        name: { type: 'string', example: 'Wireless Headphones' },
+        slug: { type: 'string', example: 'wireless-headphones' },
+        brandId: {
+          type: 'string',
+          format: 'uuid',
+          nullable: true,
+          example: BRAND_ID_EXAMPLE,
+        },
+        sku: { type: 'string', example: 'WH-1000' },
+        description: {
+          type: 'string',
+          example: 'Over-ear wireless headphones.',
+        },
+        price: { type: 'number', example: 100000, minimum: 0.01 },
+        originalPrice: {
+          type: 'number',
+          nullable: true,
+          example: 150000,
+          minimum: 0.01,
+        },
         categoryId: {
           type: 'string',
           format: 'uuid',
@@ -123,15 +187,27 @@ export class ProductsController {
     schema: {
       type: 'object',
       properties: {
-        name: { type: 'string' },
-        slug: { type: 'string' },
-        sku: { type: 'string' },
-        description: { type: 'string' },
-        price: { type: 'number' },
+        name: { type: 'string', maxLength: 200 },
+        slug: { type: 'string', maxLength: 220 },
+        brandId: {
+          type: 'string',
+          format: 'uuid',
+          nullable: true,
+        },
+        sku: { type: 'string', maxLength: 100 },
+        description: {
+          type: 'string',
+          nullable: true,
+        },
+        price: { type: 'number', minimum: 0.01 },
+        originalPrice: {
+          type: 'number',
+          nullable: true,
+          minimum: 0.01,
+        },
         categoryId: {
           type: 'string',
           format: 'uuid',
-          example: CATEGORY_ID_EXAMPLE,
         },
         isActive: { type: 'boolean' },
         image: { type: 'string', format: 'binary' },
@@ -143,6 +219,7 @@ export class ProductsController {
       storage: multer.memoryStorage(),
       limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
     }),
+    StripEmptyMultipartFieldsInterceptor,
   )
   @ApiDocumentEndpoint({
     summary: 'Update product',
@@ -163,10 +240,10 @@ export class ProductsController {
   @ApiDocumentEndpoint({
     summary: 'List products',
     description:
-      'Returns active products with database pagination, allowlisted sorting, category/price filters, and name search.',
+      'Returns active products with database pagination, allowlisted sorting, category/brand/discount/price filters, name search, discount percentage, and customer-facing stock availability (`{ availableQuantity: 0, inStock: false }` when stock has not been initialized for the product).',
     errors: [400, 500],
     successExample: {
-      items: [PRODUCT_EXAMPLE],
+      items: [PUBLIC_PRODUCT_EXAMPLE],
       pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
     },
   })
@@ -177,9 +254,10 @@ export class ProductsController {
   @Get('slug/:slug')
   @ApiDocumentEndpoint({
     summary: 'Get product by slug',
-    description: 'Returns an active product by its unique slug.',
+    description:
+      'Returns an active product by its unique slug, including customer-facing stock availability (`{ availableQuantity: 0, inStock: false }` when stock has not been initialized for the product).',
     errors: [404, 500],
-    successExample: PRODUCT_EXAMPLE,
+    successExample: PUBLIC_PRODUCT_EXAMPLE,
   })
   findBySlug(@Param('slug') slug: string) {
     return this.products.findBySlug(slug);
@@ -195,9 +273,10 @@ export class ProductsController {
   })
   @ApiDocumentEndpoint({
     summary: 'Get product by ID',
-    description: 'Returns an active product by UUID.',
+    description:
+      'Returns an active product by UUID, including customer-facing stock availability (`{ availableQuantity: 0, inStock: false }` when stock has not been initialized for the product).',
     errors: [400, 404, 500],
-    successExample: PRODUCT_EXAMPLE,
+    successExample: PUBLIC_PRODUCT_EXAMPLE,
   })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.products.findOne(id);

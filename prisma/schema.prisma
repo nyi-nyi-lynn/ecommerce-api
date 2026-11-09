@@ -131,14 +131,30 @@ model Category {
   products Product[]
 }
 
+model Brand {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String   @unique @db.VarChar(150)
+  slug          String   @unique @db.VarChar(160)
+  description   String?
+  imageUrl      String?
+  imagePublicId String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  products Product[]
+}
+
 model Product {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   categoryId    String   @db.Uuid
+  brandId       String?  @db.Uuid
   name          String   @db.VarChar(200)
   slug          String   @unique @db.VarChar(220)
   description   String?
   sku           String   @unique @db.VarChar(100)
   price         Decimal  @db.Decimal(12, 2)
+  originalPrice Decimal? @db.Decimal(12, 2)
   imageUrl      String?
   imagePublicId String?
   isActive      Boolean  @default(true)
@@ -146,12 +162,14 @@ model Product {
   updatedAt     DateTime @updatedAt
 
   category       Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand          Brand?          @relation(fields: [brandId], references: [id], onDelete: Restrict)
   stock          Stock?
   cartItems      CartItem[]
   orderItems     OrderItem[]
   stockMovements StockMovement[]
 
   @@index([categoryId])
+  @@index([brandId])
   @@index([name])
 }
 

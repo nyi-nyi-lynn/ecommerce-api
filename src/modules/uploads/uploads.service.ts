@@ -13,6 +13,7 @@ import { CLOUDINARY } from './cloudinary.provider.js';
 
 export const PRODUCT_IMAGE_FOLDER = 'ecommerce/products';
 export const CATEGORY_IMAGE_FOLDER = 'ecommerce/categories';
+export const BRAND_IMAGE_FOLDER = 'ecommerce/brands';
 export const PAYMENT_IMAGE_FOLDER = 'ecommerce/payments';
 export const PAYMENT_PROOF_IMAGE_FOLDER = PAYMENT_IMAGE_FOLDER;
 export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -58,6 +59,23 @@ export class UploadsService {
     return this.deleteOwnedImage(publicId, CATEGORY_IMAGE_FOLDER, 'category');
   }
 
+  async uploadBrandImage(
+    file: Express.Multer.File | undefined,
+    userId?: string,
+  ) {
+    return this.uploadImage(
+      file,
+      userId === undefined
+        ? BRAND_IMAGE_FOLDER
+        : `${BRAND_IMAGE_FOLDER}/users/${userId}`,
+      'Brand',
+    );
+  }
+
+  async deleteBrandImage(publicId: string) {
+    return this.deleteOwnedImage(publicId, BRAND_IMAGE_FOLDER, 'brand');
+  }
+
   async uploadImages(files: Express.Multer.File[] | undefined, folder: string) {
     if (!files?.length) return [];
     return Promise.all(
@@ -75,6 +93,10 @@ export class UploadsService {
 
   isOwnedCategoryAsset(publicId: string) {
     return this.isOwnedAsset(publicId, CATEGORY_IMAGE_FOLDER);
+  }
+
+  isOwnedBrandAsset(publicId: string) {
+    return this.isOwnedAsset(publicId, BRAND_IMAGE_FOLDER);
   }
 
   async uploadPaymentProofImage(
