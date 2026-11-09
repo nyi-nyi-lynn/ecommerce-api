@@ -6,6 +6,7 @@ import { RedisModule } from './redis/redis.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
+import { BrandsModule } from './brands/brands.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { StockModule } from './stock/stock.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
@@ -35,6 +36,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     RateLimitModule,
     AuthModule,
     CategoriesModule,
+    BrandsModule,
     ProductsModule,
     StockModule,
     RbacModule,

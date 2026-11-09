@@ -9,6 +9,8 @@ import { RbacController } from '../rbac/rbac.controller.js';
 import { RbacService } from '../rbac/rbac.service.js';
 import { CategoriesController } from '../categories/categories.controller.js';
 import { CategoriesService } from '../categories/categories.service.js';
+import { BrandsController } from '../brands/brands.controller.js';
+import { BrandsService } from '../brands/brands.service.js';
 import { ProductsController } from './products.controller.js';
 import { ProductsService } from './products.service.js';
 import { CartController } from '../cart/cart.controller.js';
@@ -31,6 +33,7 @@ describe('Swagger query parameters', () => {
     const module = await Test.createTestingModule({
       controllers: [
         ProductsController,
+        BrandsController,
         OrdersController,
         AdminOrdersController,
         AdminPaymentsController,
@@ -38,6 +41,7 @@ describe('Swagger query parameters', () => {
       ],
       providers: [
         { provide: ProductsService, useValue: {} },
+        { provide: BrandsService, useValue: {} },
         { provide: OrdersService, useValue: {} },
         { provide: PaymentsService, useValue: {} },
         { provide: StockService, useValue: {} },
@@ -59,8 +63,18 @@ describe('Swagger query parameters', () => {
       const optionalFiltersByPath = new Map([
         [
           '/api/products',
-          new Set(['categoryId', 'minPrice', 'maxPrice', 'search', 'isActive']),
+          new Set([
+            'categoryId',
+            'brandId',
+            'brandSlug',
+            'hasDiscount',
+            'minPrice',
+            'maxPrice',
+            'search',
+            'isActive',
+          ]),
         ],
+        ['/api/brands', new Set(['search', 'isActive'])],
         ['/api/admin/orders', new Set(['status'])],
         ['/api/admin/payments', new Set(['status'])],
       ]);
@@ -199,6 +213,7 @@ describe('Swagger query parameters', () => {
         AuthController,
         RbacController,
         CategoriesController,
+        BrandsController,
         ProductsController,
         StockController,
         CartController,
@@ -211,6 +226,7 @@ describe('Swagger query parameters', () => {
         { provide: AuthService, useValue: {} },
         { provide: RbacService, useValue: {} },
         { provide: CategoriesService, useValue: {} },
+        { provide: BrandsService, useValue: {} },
         { provide: ProductsService, useValue: {} },
         { provide: StockService, useValue: {} },
         { provide: CartService, useValue: {} },
@@ -239,6 +255,9 @@ describe('Swagger query parameters', () => {
         ['/api/categories/{id}', 'get', 'id'],
         ['/api/categories/{id}', 'patch', 'id'],
         ['/api/categories/{id}', 'delete', 'id'],
+        ['/api/brands/{id}', 'get', 'id'],
+        ['/api/brands/{id}', 'patch', 'id'],
+        ['/api/brands/{id}', 'delete', 'id'],
         ['/api/products/{id}', 'get', 'id'],
         ['/api/products/{id}', 'patch', 'id'],
         ['/api/stock/products/{productId}/initialize', 'post', 'productId'],
@@ -328,7 +347,15 @@ describe('Swagger query parameters', () => {
         type: 'string',
         format: 'uuid',
       });
+      expect(schemas.CreateProductDto?.properties?.brandId).toMatchObject({
+        type: 'string',
+        format: 'uuid',
+      });
       expect(schemas.UpdateProductDto?.properties?.categoryId).toMatchObject({
+        type: 'string',
+        format: 'uuid',
+      });
+      expect(schemas.UpdateProductDto?.properties?.brandId).toMatchObject({
         type: 'string',
         format: 'uuid',
       });

@@ -235,6 +235,49 @@ describe('UploadsService', () => {
     );
   });
 
+  it('uploads and deletes brand images using the ecommerce/brands folder', async () => {
+    cloudinary.uploader.upload_stream.mockImplementation(
+      (_options: unknown, callback: (error: null, result: any) => void) => ({
+        end: () =>
+          callback(null, {
+            secure_url:
+              'https://res.cloudinary.com/demo/image/upload/brand.jpg',
+            public_id: `ecommerce/brands/users/${USER_ID}/brand`,
+            format: 'jpg',
+            width: 800,
+            height: 600,
+            bytes: 123,
+          }),
+      }),
+    );
+
+    await expect(
+      service.uploadBrandImage(imageFile(), USER_ID),
+    ).resolves.toMatchObject({
+      public_id: `ecommerce/brands/users/${USER_ID}/brand`,
+    });
+    expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folder: `ecommerce/brands/users/${USER_ID}`,
+      }),
+      expect.any(Function),
+    );
+
+    await expect(
+      service.deleteBrandImage(`ecommerce/brands/users/${USER_ID}/brand`),
+    ).resolves.toBe(true);
+    expect(cloudinary.uploader.destroy).toHaveBeenCalledWith(
+      `ecommerce/brands/users/${USER_ID}/brand`,
+      { resource_type: 'image', invalidate: true },
+    );
+
+    cloudinary.uploader.destroy.mockClear();
+    await expect(
+      service.deleteBrandImage(`ecommerce/categories/users/${USER_ID}/image`),
+    ).resolves.toBe(false);
+    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+  });
+
   it('uploads payment proof images into ecommerce/payments/users/{userId} and validates files', async () => {
     cloudinary.uploader.upload_stream.mockImplementation(
       (_options: unknown, callback: (error: null, result: any) => void) => ({

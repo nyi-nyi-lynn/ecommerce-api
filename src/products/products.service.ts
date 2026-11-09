@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -6,6 +7,7 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
@@ -17,6 +19,36 @@ import {
   buildPaginatedResponse,
   resolvePaginationParams,
 } from '../common/pagination/pagination.util.js';
+
+const productWriteInclude = {
+  category: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      imageUrl: true,
+    },
+  },
+  brand: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      imageUrl: true,
+    },
+  },
+} satisfies Prisma.ProductInclude;
+
+const publicProductInclude = {
+  ...productWriteInclude,
+  stock: {
+    select: {
+      quantity: true,
+      reservedQuantity: true,
+      updatedAt: true,
+    },
+  },
+} satisfies Prisma.ProductInclude;
 
 @Injectable()
 export class ProductsService {
@@ -31,7 +63,16 @@ export class ProductsService {
     image?: Express.Multer.File,
     userId?: string,
   ) {
+    this.validatePricing(
+      new Prisma.Decimal(dto.price),
+      dto.originalPrice !== undefined && dto.originalPrice !== null
+        ? new Prisma.Decimal(dto.originalPrice)
+        : null,
+    );
     await this.ensureCategory(dto.categoryId);
+    if (dto.brandId !== undefined && dto.brandId !== null) {
+      await this.ensureBrand(dto.brandId);
+    }
     await this.ensureUnique(dto.sku.trim(), dto.slug.trim());
     let uploaded: { secure_url: string; public_id: string } | undefined;
     if (image) {
@@ -42,9 +83,11 @@ export class ProductsService {
       uploaded = await this.uploads.uploadProductImage(image, userId);
     }
     try {
-      return await this.prisma.product.create({
+      const created = await this.prisma.product.create({
         data: this.createData(dto, uploaded),
+        include: productWriteInclude,
       });
+      return this.mapProductResponse(created);
     } catch (error) {
       if (uploaded) await this.uploads?.deleteProductImage(uploaded.public_id);
       if (hasPrismaErrorCode(error, 'P2002'))
@@ -53,7 +96,7 @@ export class ProductsService {
         );
       if (hasPrismaErrorCode(error, 'P2003'))
         throw new UnprocessableEntityException(
-          'The selected category does not exist.',
+          'The selected category or brand does not exist.',
         );
       throw error;
     }
@@ -67,12 +110,39 @@ export class ProductsService {
   ) {
     const current = await this.prisma.product.findUnique({
       where: { id },
-      select: { id: true, imageUrl: true, imagePublicId: true },
+      select: {
+        id: true,
+        price: true,
+        originalPrice: true,
+        imageUrl: true,
+        imagePublicId: true,
+      },
     });
     if (!current) {
       throw new NotFoundException('Product not found.');
     }
+    const effectivePrice =
+      dto.price !== undefined
+        ? new Prisma.Decimal(dto.price)
+        : current.price !== undefined && current.price !== null
+          ? new Prisma.Decimal(current.price.toString())
+          : undefined;
+    const effectiveOriginalPrice =
+      dto.originalPrice === null
+        ? null
+        : dto.originalPrice !== undefined
+          ? new Prisma.Decimal(dto.originalPrice)
+          : current.originalPrice !== undefined &&
+              current.originalPrice !== null
+            ? new Prisma.Decimal(current.originalPrice.toString())
+            : null;
+    if (dto.price !== undefined || dto.originalPrice !== undefined) {
+      this.validatePricing(effectivePrice, effectiveOriginalPrice);
+    }
     if (dto.categoryId !== undefined) await this.ensureCategory(dto.categoryId);
+    if (dto.brandId !== undefined && dto.brandId !== null) {
+      await this.ensureBrand(dto.brandId);
+    }
     await this.ensureUnique(dto.sku?.trim(), dto.slug?.trim(), id);
     let uploaded: { secure_url: string; public_id: string } | undefined;
     if (image) {
@@ -87,9 +157,15 @@ export class ProductsService {
       ...(dto.slug !== undefined && { slug: dto.slug.trim() }),
       ...(dto.sku !== undefined && { sku: dto.sku.trim() }),
       ...(dto.description !== undefined && {
-        description: dto.description.trim() || null,
+        description: dto.description ? dto.description.trim() || null : null,
       }),
       ...(dto.price !== undefined && { price: new Prisma.Decimal(dto.price) }),
+      ...(dto.originalPrice !== undefined && {
+        originalPrice:
+          dto.originalPrice === null
+            ? null
+            : new Prisma.Decimal(dto.originalPrice),
+      }),
       ...(uploaded
         ? { imageUrl: uploaded.secure_url, imagePublicId: uploaded.public_id }
         : dto.imageUrl !== undefined
@@ -99,10 +175,20 @@ export class ProductsService {
       ...(dto.categoryId !== undefined && {
         category: { connect: { id: dto.categoryId } },
       }),
+      ...(dto.brandId !== undefined && {
+        brand:
+          dto.brandId === null
+            ? { disconnect: true }
+            : { connect: { id: dto.brandId } },
+      }),
     };
     let updated;
     try {
-      updated = await this.prisma.product.update({ where: { id }, data });
+      updated = await this.prisma.product.update({
+        where: { id },
+        data,
+        include: productWriteInclude,
+      });
     } catch (error) {
       if (uploaded) {
         await this.uploads?.deleteProductImage(uploaded.public_id);
@@ -115,7 +201,7 @@ export class ProductsService {
         throw new NotFoundException('Product not found.');
       if (hasPrismaErrorCode(error, 'P2003'))
         throw new UnprocessableEntityException(
-          'The selected category does not exist.',
+          'The selected category or brand does not exist.',
         );
       throw error;
     }
@@ -127,7 +213,7 @@ export class ProductsService {
     ) {
       await this.uploads?.deleteProductImage(current.imagePublicId);
     }
-    return updated;
+    return this.mapProductResponse(updated);
   }
 
   async findAll(query: QueryProductsDto) {
@@ -143,6 +229,13 @@ export class ProductsService {
     const where: Prisma.ProductWhereInput = {
       isActive: true,
       ...(query.categoryId !== undefined && { categoryId: query.categoryId }),
+      ...(query.brandId !== undefined && { brandId: query.brandId }),
+      ...(query.brandSlug?.trim() && {
+        brand: { slug: query.brandSlug.trim(), isActive: true },
+      }),
+      ...(query.hasDiscount !== undefined && {
+        originalPrice: query.hasDiscount ? { not: null } : null,
+      }),
       ...((query.minPrice !== undefined || query.maxPrice !== undefined) && {
         price: {
           ...(query.minPrice !== undefined && {
@@ -168,26 +261,180 @@ export class ProductsService {
         skip,
         take: limit,
         orderBy,
+        include: publicProductInclude,
       }),
       this.prisma.product.count({ where }),
     ]);
-    return buildPaginatedResponse(items, total, page, limit);
+    return buildPaginatedResponse(
+      items.map((item) => this.mapPublicProduct(item)),
+      total,
+      page,
+      limit,
+    );
   }
 
   async findOne(id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, isActive: true },
+      include: publicProductInclude,
     });
     if (!product) throw new NotFoundException('Product not found.');
-    return product;
+    return this.mapPublicProduct(product);
   }
 
   async findBySlug(slug: string) {
     const product = await this.prisma.product.findFirst({
       where: { slug, isActive: true },
+      include: publicProductInclude,
     });
     if (!product) throw new NotFoundException('Product not found.');
-    return product;
+    return this.mapPublicProduct(product);
+  }
+
+  private mapProductResponse<
+    T extends {
+      categoryId?: string | null;
+      category?: {
+        id: string;
+        name: string;
+        slug: string;
+        imageUrl: string | null;
+      } | null;
+      brandId?: string | null;
+      brand?: {
+        id: string;
+        name: string;
+        slug: string;
+        imageUrl: string | null;
+      } | null;
+      price?: Prisma.Decimal | number | string;
+      originalPrice?: Prisma.Decimal | number | string | null;
+    },
+  >(product: T) {
+    const {
+      categoryId: _categoryId,
+      brandId: _brandId,
+      category: rawCategory,
+      brand: rawBrand,
+      ...rest
+    } = product;
+    const category = rawCategory
+      ? {
+          id: rawCategory.id,
+          name: rawCategory.name,
+          slug: rawCategory.slug,
+          imageUrl: rawCategory.imageUrl ?? null,
+        }
+      : null;
+    const brand = rawBrand
+      ? {
+          id: rawBrand.id,
+          name: rawBrand.name,
+          slug: rawBrand.slug,
+          imageUrl: rawBrand.imageUrl ?? null,
+        }
+      : null;
+    const originalPrice = rest.originalPrice ?? null;
+    return {
+      ...rest,
+      category,
+      brand,
+      originalPrice,
+      discountPercentage: this.calculateDiscountPercentage(
+        rest.price,
+        originalPrice,
+      ),
+    };
+  }
+
+  private mapPublicProduct<
+    T extends {
+      categoryId?: string | null;
+      category?: {
+        id: string;
+        name: string;
+        slug: string;
+        imageUrl: string | null;
+      } | null;
+      brandId?: string | null;
+      brand?: {
+        id: string;
+        name: string;
+        slug: string;
+        imageUrl: string | null;
+      } | null;
+      price?: Prisma.Decimal | number | string;
+      originalPrice?: Prisma.Decimal | number | string | null;
+      stock?: {
+        quantity: number;
+        reservedQuantity: number;
+        updatedAt: Date;
+      } | null;
+    },
+  >(product: T) {
+    const { stock, ...rest } = product;
+    const availableQuantity = stock
+      ? stock.quantity - stock.reservedQuantity
+      : 0;
+    return {
+      ...this.mapProductResponse(rest),
+      stock: stock
+        ? {
+            availableQuantity,
+            inStock: availableQuantity > 0,
+            updatedAt: stock.updatedAt,
+          }
+        : {
+            availableQuantity: 0,
+            inStock: false,
+          },
+    };
+  }
+
+  private calculateDiscountPercentage(
+    price?: Prisma.Decimal | number | string,
+    originalPrice?: Prisma.Decimal | number | string | null,
+  ): number | null {
+    if (
+      price === undefined ||
+      price === null ||
+      originalPrice === undefined ||
+      originalPrice === null
+    ) {
+      return null;
+    }
+    const sellingPrice = new Prisma.Decimal(price.toString());
+    const basePrice = new Prisma.Decimal(originalPrice.toString());
+    if (basePrice.lte(0) || basePrice.lte(sellingPrice)) {
+      return null;
+    }
+    return basePrice
+      .minus(sellingPrice)
+      .div(basePrice)
+      .mul(100)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+      .toNumber();
+  }
+
+  private validatePricing(
+    price: Prisma.Decimal | undefined,
+    originalPrice: Prisma.Decimal | null,
+  ) {
+    if (price !== undefined && price.lte(0)) {
+      throw new BadRequestException('price must be a positive monetary value.');
+    }
+    if (originalPrice !== null) {
+      if (originalPrice.lte(0)) {
+        throw new BadRequestException(
+          'originalPrice must be a positive monetary value.',
+        );
+      }
+      if (price !== undefined && originalPrice.lte(price)) {
+        throw new BadRequestException(
+          'originalPrice must be greater than price.',
+        );
+      }
+    }
   }
 
   private createData(
@@ -200,9 +447,17 @@ export class ProductsService {
       sku: dto.sku.trim(),
       description: dto.description?.trim() || null,
       price: new Prisma.Decimal(dto.price),
+      originalPrice:
+        dto.originalPrice !== undefined && dto.originalPrice !== null
+          ? new Prisma.Decimal(dto.originalPrice)
+          : null,
       imageUrl: uploaded?.secure_url ?? dto.imageUrl ?? null,
       imagePublicId: uploaded?.public_id ?? null,
       category: { connect: { id: dto.categoryId } },
+      ...(dto.brandId !== undefined &&
+        dto.brandId !== null && {
+          brand: { connect: { id: dto.brandId } },
+        }),
     };
   }
 
@@ -215,6 +470,26 @@ export class ProductsService {
     ) {
       throw new UnprocessableEntityException(
         'The selected category does not exist.',
+      );
+    }
+  }
+
+  private async ensureBrand(brandId: string) {
+    if (typeof brandId !== 'string' || !isUUID(brandId)) {
+      throw new BadRequestException('brandId must be a valid UUID.');
+    }
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { id: true, isActive: true },
+    });
+    if (!brand) {
+      throw new UnprocessableEntityException(
+        'The selected brand does not exist.',
+      );
+    }
+    if (!brand.isActive) {
+      throw new UnprocessableEntityException(
+        'The selected brand is inactive.',
       );
     }
   }

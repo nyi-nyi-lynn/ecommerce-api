@@ -16,7 +16,13 @@ import {
 } from '../../common/pagination/pagination-query.dto.js';
 import { TransformBoolean } from '../../common/transformers/transform-boolean.decorator.js';
 
-const sortableFields = ['name', 'price', 'createdAt', 'updatedAt'] as const;
+const sortableFields = [
+  'name',
+  'price',
+  'originalPrice',
+  'createdAt',
+  'updatedAt',
+] as const;
 
 // Caps the largest supported offset at 999,900 rows when limit is 100.
 export const MAX_PRODUCT_PAGE = MAX_PAGE;
@@ -46,6 +52,32 @@ export class QueryProductsDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   categoryId?: string;
+  @ApiPropertyOptional({
+    description: 'Filter by brand UUID.',
+    type: String,
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  brandId?: string;
+  @ApiPropertyOptional({
+    description: 'Filter by brand slug; maximum 160 characters.',
+    type: String,
+    maxLength: 160,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  brandSlug?: string;
+  @ApiPropertyOptional({
+    description:
+      'Filter products by discount availability (`true` returns only discounted products; `false` returns only non-discounted products).',
+    type: Boolean,
+  })
+  @IsOptional()
+  @TransformBoolean()
+  @IsBoolean()
+  hasDiscount?: boolean;
   @ApiPropertyOptional({
     description: 'Inclusive minimum price.',
     type: Number,

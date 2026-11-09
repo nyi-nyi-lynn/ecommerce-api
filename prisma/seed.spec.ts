@@ -320,6 +320,18 @@ describe('development seed', () => {
     ).toHaveLength(5);
     const adminRoleId = state.roles.get('ADMIN')?.id;
     expect(adminRoleId).toBeDefined();
+    for (const code of [
+      'brand:read',
+      'brand:create',
+      'brand:update',
+      'brand:delete',
+    ]) {
+      const permission = state.permissions.get(code);
+      expect(permission).toBeDefined();
+      expect(
+        state.rolePermissionLinks.has(`${adminRoleId}|${permission?.id}`),
+      ).toBe(true);
+    }
     expect(
       [...state.rolePermissionLinks].every(
         (link) => link.split('|')[0] === adminRoleId,
