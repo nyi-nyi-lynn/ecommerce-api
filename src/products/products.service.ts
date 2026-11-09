@@ -157,7 +157,8 @@ export class ProductsService {
       ...(dto.slug !== undefined && { slug: dto.slug.trim() }),
       ...(dto.sku !== undefined && { sku: dto.sku.trim() }),
       ...(dto.description !== undefined && {
-        description: dto.description ? dto.description.trim() || null : null,
+        description:
+          dto.description === null ? null : dto.description.trim() || null,
       }),
       ...(dto.price !== undefined && { price: new Prisma.Decimal(dto.price) }),
       ...(dto.originalPrice !== undefined && {

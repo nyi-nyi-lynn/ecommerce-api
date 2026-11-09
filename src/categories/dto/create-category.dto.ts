@@ -5,10 +5,16 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
+import {
+  TransformNullableString,
+  TransformTrimmedString,
+} from '../../common/transformers/dto-transforms.util.js';
 import { TransformBoolean } from '../../common/transformers/transform-boolean.decorator.js';
 
 export class CreateCategoryDto {
+  @TransformTrimmedString()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -19,6 +25,7 @@ export class CreateCategoryDto {
   })
   name: string;
 
+  @TransformTrimmedString()
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
@@ -29,18 +36,20 @@ export class CreateCategoryDto {
   })
   slug: string;
 
-  @IsString()
+  @TransformNullableString()
   @IsOptional()
+  @IsString()
   @ApiPropertyOptional({
     description: 'Optional descriptive text.',
     type: String,
+    nullable: true,
     example: 'description-example',
   })
-  description?: string;
+  description?: string | null;
 
-  @IsOptional()
-  @IsBoolean()
+  @ValidateIf((_, value) => value !== undefined)
   @TransformBoolean()
+  @IsBoolean()
   @ApiPropertyOptional({
     description: 'Whether the resource is active.',
     type: Boolean,

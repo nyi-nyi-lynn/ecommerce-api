@@ -50,7 +50,8 @@ export class RbacService {
         data: {
           ...(dto.name !== undefined && { name: dto.name.trim() }),
           ...(dto.description !== undefined && {
-            description: dto.description.trim() || null,
+            description:
+              dto.description === null ? null : dto.description.trim() || null,
           }),
         },
       });

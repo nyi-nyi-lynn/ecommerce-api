@@ -1,52 +1,6 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
-import { TransformBoolean } from '../../common/transformers/transform-boolean.decorator.js';
+import { PartialType } from '@nestjs/swagger';
+import { CreateCategoryDto } from './create-category.dto.js';
 
-export class UpdateCategoryDto {
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  @ApiPropertyOptional({
-    description: 'Category display name.',
-    example: 'Electronics',
-    maxLength: 100,
-  })
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(120)
-  @ApiPropertyOptional({
-    description: 'Unique category URL slug.',
-    example: 'electronics',
-    maxLength: 120,
-  })
-  slug?: string;
-
-  @IsOptional()
-  @IsString()
-  @ApiPropertyOptional({
-    description: 'Optional descriptive text.',
-    type: String,
-    example: 'description-example',
-  })
-  description?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  @TransformBoolean()
-  @ApiPropertyOptional({
-    description: 'Whether the resource is active.',
-    type: Boolean,
-    example: true,
-  })
-  isActive?: boolean;
-}
+export class UpdateCategoryDto extends PartialType(CreateCategoryDto, {
+  skipNullProperties: false,
+}) {}
