@@ -16,12 +16,26 @@ function resolveTrustProxy(raw: string | undefined): boolean | number | string {
   return trimmed;
 }
 
+function resolveCorsOrigin(raw: string | undefined): boolean | string[] {
+  if (!raw || raw.trim() === '' || raw.trim().toLowerCase() === 'true') {
+    return true;
+  }
+  const origins = raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  return origins.length > 0 ? origins : true;
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     instrument: ObserveInstrument,
   });
   app.set('trust proxy', resolveTrustProxy(process.env.TRUST_PROXY));
-  app.enableCors();
+  app.enableCors({
+    origin: resolveCorsOrigin(process.env.CORS_ORIGIN),
+    credentials: true,
+  });
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
