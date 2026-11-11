@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CmsRevisionStatus } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UploadsService } from '../modules/uploads/uploads.service.js';
@@ -54,6 +54,7 @@ describe('CmsService', () => {
       cmsDocument: {
         findMany: vi.fn().mockResolvedValue([{ id: DOC_ID }]),
         findUnique: vi.fn().mockResolvedValue({ id: DOC_ID }),
+        findFirst: vi.fn().mockResolvedValue(null),
         count: vi.fn().mockResolvedValue(1),
         create: vi.fn(async ({ data }) => ({ id: DOC_ID, ...data })),
         update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data })),
@@ -125,6 +126,124 @@ describe('CmsService', () => {
     await expect(service.deleteRevision(REV_ID)).rejects.toBeInstanceOf(ConflictException);
     expect(tx.cmsRevision.update).not.toHaveBeenCalled();
     expect(tx.cmsRevision.delete).not.toHaveBeenCalled();
+  });
+
+  it('refuses edits and deletion of archived revisions', async () => {
+    prisma.cmsRevision.findUnique.mockResolvedValue({ status: CmsRevisionStatus.ARCHIVED });
+    await expect(service.updateRevision(REV_ID, { seoTitle: 'Locked' }, undefined, USER_ID)).rejects.toBeInstanceOf(ConflictException);
+    tx.cmsRevision.findUnique.mockResolvedValue({ status: CmsRevisionStatus.ARCHIVED });
+    await expect(service.deleteRevision(REV_ID)).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.cmsRevision.update).not.toHaveBeenCalled();
+    expect(tx.cmsRevision.delete).not.toHaveBeenCalled();
+  });
+
+  it('publishes a draft and records publisher metadata when no previous publication exists', async () => {
+    tx.cmsRevision.findFirst
+      .mockResolvedValueOnce({ id: REV_ID })
+      .mockResolvedValueOnce(null);
+    tx.cmsRevision.findUnique
+      .mockResolvedValueOnce({ status: CmsRevisionStatus.DRAFT })
+      .mockResolvedValueOnce({ sections: [] });
+
+    const result = await service.publishDocument(DOC_ID, USER_ID);
+
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(tx.cmsRevision.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: REV_ID },
+      data: expect.objectContaining({
+        status: CmsRevisionStatus.PUBLISHED,
+        publishedById: USER_ID,
+        publishedAt: expect.any(Date),
+      }),
+    }));
+    expect(result.document).toMatchObject({ id: DOC_ID });
+  });
+
+  it('archives the previous publication before publishing its replacement', async () => {
+    const previousId = '00000000-0000-4000-8000-000000000006';
+    tx.cmsRevision.findFirst
+      .mockResolvedValueOnce({ id: REV_ID })
+      .mockResolvedValueOnce({ id: previousId });
+    tx.cmsRevision.findUnique
+      .mockResolvedValueOnce({ status: CmsRevisionStatus.DRAFT })
+      .mockResolvedValueOnce({ sections: [] });
+
+    await service.publishDocument(DOC_ID, USER_ID);
+
+    expect(tx.cmsRevision.update).toHaveBeenNthCalledWith(1, {
+      where: { id: previousId },
+      data: { status: CmsRevisionStatus.ARCHIVED },
+    });
+    expect(tx.cmsRevision.update).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      where: { id: REV_ID },
+      data: expect.objectContaining({ status: CmsRevisionStatus.PUBLISHED }),
+    }));
+  });
+
+  it('rejects publishing without a draft or with structurally invalid draft content', async () => {
+    tx.cmsRevision.findFirst.mockResolvedValueOnce(null);
+    await expect(service.publishDocument(DOC_ID, USER_ID)).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.cmsRevision.update).not.toHaveBeenCalled();
+
+    tx.cmsRevision.findFirst.mockResolvedValueOnce({ id: REV_ID });
+    tx.cmsRevision.findUnique
+      .mockResolvedValueOnce({ status: CmsRevisionStatus.DRAFT })
+      .mockResolvedValueOnce({ sections: [{ key: 'hero', type: 'hero', position: 0, content: [], items: [] }] });
+    await expect(service.publishDocument(DOC_ID, USER_ID)).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.cmsRevision.update).not.toHaveBeenCalled();
+  });
+
+  it('maps a publication uniqueness race to a client-safe conflict', async () => {
+    tx.cmsRevision.findFirst
+      .mockResolvedValueOnce({ id: REV_ID })
+      .mockResolvedValueOnce(null);
+    tx.cmsRevision.findUnique
+      .mockResolvedValueOnce({ status: CmsRevisionStatus.DRAFT })
+      .mockResolvedValueOnce({ sections: [] });
+    tx.cmsRevision.update.mockRejectedValueOnce({ code: 'P2002' });
+
+    await expect(service.publishDocument(DOC_ID, USER_ID)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('returns only published revisions and excludes hidden sections from the public page', async () => {
+    prisma.cmsDocument.findFirst.mockResolvedValue({
+      key: 'home',
+      title: 'Home',
+      revisions: [{
+        seoTitle: 'Home SEO',
+        seoDescription: 'Description',
+        ogImageUrl: 'https://cdn.test/og.png',
+        sections: [{
+          key: 'hero', type: 'hero', position: 0, content: { headline: 'Welcome' }, imageUrl: null,
+          items: [{ position: 0, title: 'Shop', body: null, url: '/products', label: 'Shop', category: null }],
+        }],
+      }],
+    });
+    const page = await service.getPublishedPage('home');
+    expect(page).toMatchObject({ key: 'home', title: 'Home', seoTitle: 'Home SEO' });
+    expect(page.sections).toHaveLength(1);
+    expect(page.sections[0].items[0]).toMatchObject({ title: 'Shop' });
+    expect(page).not.toHaveProperty('revisionId');
+    expect(prisma.cmsDocument.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: 'home', revisions: { some: { status: CmsRevisionStatus.PUBLISHED } } },
+      select: expect.objectContaining({
+        revisions: expect.objectContaining({
+          where: { status: CmsRevisionStatus.PUBLISHED },
+          select: expect.objectContaining({
+            sections: expect.objectContaining({ where: { isVisible: true } }),
+          }),
+        }),
+      }),
+    }));
+  });
+
+  it('does not return documents without a published revision and filters public listings consistently', async () => {
+    await expect(service.getPublishedPage('home')).rejects.toBeInstanceOf(NotFoundException);
+    prisma.cmsDocument.findMany.mockResolvedValueOnce([{ key: 'home', title: 'Home', revisions: [{ seoTitle: null, seoDescription: null, ogImageUrl: null }] }]);
+    await service.listPublishedPages({ page: 2, limit: 10, search: 'home' });
+    const where = prisma.cmsDocument.findMany.mock.calls.at(-1)?.[0].where;
+    expect(where).toEqual(expect.objectContaining({ revisions: { some: { status: CmsRevisionStatus.PUBLISHED } } }));
+    expect(prisma.cmsDocument.count).toHaveBeenLastCalledWith({ where });
   });
 
   it('creates structured section content only for a DRAFT revision', async () => {

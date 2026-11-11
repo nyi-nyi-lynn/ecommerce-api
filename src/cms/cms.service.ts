@@ -56,6 +56,234 @@ export class CmsService {
     return buildPaginatedResponse(items, total, page, limit);
   }
 
+  async publishDocument(documentId: string, publisherId: string) {
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          // This is the same parent-row lock used by revision creation. It
+          // serializes publishers and draft creation for this document.
+          await this.lockDocument(tx, documentId);
+          const document = await tx.cmsDocument.findUnique({
+            where: { id: documentId },
+            select: { id: true, key: true, title: true },
+          });
+          if (!document) throw new NotFoundException('CMS document not found.');
+
+          const draft = await tx.cmsRevision.findFirst({
+            where: { documentId, status: CmsRevisionStatus.DRAFT },
+            select: { id: true },
+          });
+          if (!draft) {
+            throw new ConflictException('The CMS document has no DRAFT revision to publish.');
+          }
+
+          // Draft editors lock this row before changing content. Waiting for
+          // that lock ensures validation sees the committed draft contents.
+          await this.lockDraftRevision(tx, draft.id);
+          const content = await tx.cmsRevision.findUnique({
+            where: { id: draft.id },
+            select: {
+              sections: {
+                select: {
+                  key: true,
+                  type: true,
+                  position: true,
+                  content: true,
+                  items: { select: { position: true } },
+                },
+              },
+            },
+          });
+          if (!content) throw new NotFoundException('CMS revision not found.');
+          this.validatePublishableContent(content.sections);
+
+          const previousPublished = await tx.cmsRevision.findFirst({
+            where: { documentId, status: CmsRevisionStatus.PUBLISHED },
+            select: { id: true },
+          });
+          if (previousPublished) {
+            await tx.cmsRevision.update({
+              where: { id: previousPublished.id },
+              data: { status: CmsRevisionStatus.ARCHIVED },
+            });
+          }
+
+          const revision = await tx.cmsRevision.update({
+            where: { id: draft.id },
+            data: {
+              status: CmsRevisionStatus.PUBLISHED,
+              publishedAt: new Date(),
+              publishedById: publisherId,
+            },
+            include: {
+              sections: {
+                orderBy: [{ position: 'asc' }, { id: 'asc' }],
+                include: {
+                  items: {
+                    orderBy: [{ position: 'asc' }, { id: 'asc' }],
+                    include: { category: { select: { id: true, name: true, slug: true } } },
+                  },
+                },
+              },
+            },
+          });
+          return { document, revision };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
+    } catch (error: unknown) {
+      if (hasPrismaErrorCode(error, 'P2002')) {
+        throw new ConflictException('A revision was published concurrently. Refresh and try again.');
+      }
+      throw error;
+    }
+  }
+
+  async getDraftPreview(documentId: string) {
+    const document = await this.prisma.cmsDocument.findUnique({
+      where: { id: documentId },
+      select: {
+        id: true,
+        key: true,
+        title: true,
+        revisions: {
+          where: { status: CmsRevisionStatus.DRAFT },
+          take: 1,
+          select: {
+            id: true,
+            revisionNumber: true,
+            status: true,
+            seoTitle: true,
+            seoDescription: true,
+            ogImageUrl: true,
+            ogImagePublicId: true,
+            sections: {
+              orderBy: [{ position: 'asc' }, { id: 'asc' }],
+              include: {
+                items: {
+                  orderBy: [{ position: 'asc' }, { id: 'asc' }],
+                  include: { category: { select: { id: true, name: true, slug: true } } },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!document) throw new NotFoundException('CMS document not found.');
+    const revision = document.revisions[0];
+    if (!revision) throw new NotFoundException('CMS DRAFT revision not found.');
+    return { document: { id: document.id, key: document.key, title: document.title }, revision };
+  }
+
+  async listPublishedPages(query: QueryCmsDocumentsDto) {
+    const { page, limit, skip } = resolvePaginationParams(query);
+    const where: Prisma.CmsDocumentWhereInput = {
+      revisions: { some: { status: CmsRevisionStatus.PUBLISHED } },
+      ...(query.search && {
+        OR: [
+          { key: { contains: query.search, mode: 'insensitive' } },
+          { title: { contains: query.search, mode: 'insensitive' } },
+        ],
+      }),
+    };
+    const [documents, total] = await Promise.all([
+      this.prisma.cmsDocument.findMany({
+        where,
+        orderBy: [{ key: 'asc' }, { id: 'asc' }],
+        skip,
+        take: limit,
+        select: {
+          key: true,
+          title: true,
+          revisions: {
+            where: { status: CmsRevisionStatus.PUBLISHED },
+            take: 1,
+            select: { seoTitle: true, seoDescription: true, ogImageUrl: true },
+          },
+        },
+      }),
+      this.prisma.cmsDocument.count({ where }),
+    ]);
+    const items = documents.map(({ key, title, revisions }) => ({
+      key,
+      title,
+      seoTitle: revisions[0]?.seoTitle ?? null,
+      seoDescription: revisions[0]?.seoDescription ?? null,
+      ogImageUrl: revisions[0]?.ogImageUrl ?? null,
+    }));
+    return buildPaginatedResponse(items, total, page, limit);
+  }
+
+  async getPublishedPage(key: string) {
+    if (!/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(key) || key.length > 100) {
+      throw new BadRequestException('key must be a valid CMS document key.');
+    }
+    const document = await this.prisma.cmsDocument.findFirst({
+      where: {
+        key,
+        revisions: { some: { status: CmsRevisionStatus.PUBLISHED } },
+      },
+      select: {
+        key: true,
+        title: true,
+        revisions: {
+          where: { status: CmsRevisionStatus.PUBLISHED },
+          take: 1,
+          select: {
+            seoTitle: true,
+            seoDescription: true,
+            ogImageUrl: true,
+            sections: {
+              where: { isVisible: true },
+              orderBy: [{ position: 'asc' }, { id: 'asc' }],
+              select: {
+                key: true,
+                type: true,
+                position: true,
+                content: true,
+                imageUrl: true,
+                items: {
+                  orderBy: [{ position: 'asc' }, { id: 'asc' }],
+                  select: {
+                    position: true,
+                    title: true,
+                    body: true,
+                    url: true,
+                    label: true,
+                    category: { select: { id: true, name: true, slug: true, imageUrl: true, isActive: true } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const revision = document?.revisions[0];
+    if (!document || !revision) throw new NotFoundException('Published CMS page not found.');
+    return {
+      key: document.key,
+      title: document.title,
+      seoTitle: revision.seoTitle,
+      seoDescription: revision.seoDescription,
+      ogImageUrl: revision.ogImageUrl,
+      sections: revision.sections.map((section) => ({
+        key: section.key,
+        type: section.type,
+        position: section.position,
+        content: section.content,
+        imageUrl: section.imageUrl,
+        items: section.items.map(({ category, ...item }) => ({
+          ...item,
+          category: category?.isActive
+            ? { id: category.id, name: category.name, slug: category.slug, imageUrl: category.imageUrl }
+            : null,
+        })),
+      })),
+    };
+  }
+
   async getDocument(id: string) {
     const document = await this.prisma.cmsDocument.findUnique({ where: { id } });
     if (!document) throw new NotFoundException('CMS document not found.');
@@ -510,6 +738,34 @@ export class CmsService {
   private validateContent(value: unknown): asserts value is Record<string, unknown> {
     if (!isCmsJsonObject(value)) {
       throw new BadRequestException('content must be a JSON object.');
+    }
+  }
+
+  private validatePublishableContent(
+    sections: Array<{
+      key: string;
+      type: string;
+      position: number;
+      content: unknown;
+      items: Array<{ position: number }>;
+    }>,
+  ) {
+    // Phase 3 defines structured JSON objects but no section-type-specific
+    // required fields. Validate the persisted structure without inventing
+    // page-content requirements; hidden sections are valid revisions too.
+    const valid = sections.every(
+      (section) =>
+        section.key.trim().length > 0 &&
+        section.type.trim().length > 0 &&
+        Number.isSafeInteger(section.position) &&
+        section.position >= 0 &&
+        isCmsJsonObject(section.content) &&
+        section.items.every(
+          (item) => Number.isSafeInteger(item.position) && item.position >= 0,
+        ),
+    );
+    if (!valid) {
+      throw new BadRequestException('The DRAFT revision contains invalid CMS section content.');
     }
   }
 
