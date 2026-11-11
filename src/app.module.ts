@@ -13,6 +13,7 @@ import { RbacModule } from './rbac/rbac.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { CartModule } from './cart/cart.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
+import { CmsModule } from './cms/cms.module.js';
 import { validateEnvironment } from './auth/token-config.js';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { GlobalExceptionFilter } from './common/http/global-exception.filter.js';
@@ -43,6 +44,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     OrdersModule,
     CartModule,
     PaymentsModule,
+    CmsModule,
   ],
   controllers: [AppController],
   providers: [
