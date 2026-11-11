@@ -4,8 +4,9 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -51,6 +52,12 @@ enum StockMovementType {
   CANCELLATION
 }
 
+enum CmsRevisionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 model User {
   id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name         String   @db.VarChar(100)
@@ -68,6 +75,8 @@ model User {
   refreshTokens           RefreshToken[]
   paymentAttemptsReviewed PaymentAttempt[] @relation("PaymentAttemptReviewer")
   paymentEvents           PaymentEvent[]   @relation("PaymentEventActor")
+  cmsRevisionsCreated     CmsRevision[]    @relation("CmsRevisionCreator")
+  cmsRevisionsPublished   CmsRevision[]    @relation("CmsRevisionPublisher")
   role                    Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
 }
 
@@ -128,7 +137,85 @@ model Category {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  products Product[]
+  products        Product[]
+  cmsSectionItems CmsSectionItem[]
+}
+
+model CmsDocument {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key       String   @unique @db.VarChar(100)
+  title     String   @db.VarChar(150)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  revisions CmsRevision[]
+}
+
+model CmsRevision {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId      String            @db.Uuid
+  revisionNumber  Int
+  status          CmsRevisionStatus @default(DRAFT)
+  seoTitle        String?           @db.VarChar(70)
+  seoDescription  String?           @db.VarChar(160)
+  ogImageUrl      String?           @db.Text
+  ogImagePublicId String?           @db.Text
+  createdById     String?           @db.Uuid
+  publishedById   String?           @db.Uuid
+  publishedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  document    CmsDocument  @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  createdBy   User?        @relation("CmsRevisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedBy User?        @relation("CmsRevisionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  sections    CmsSection[]
+
+  @@unique([documentId, revisionNumber])
+  @@unique([documentId], where: raw("status = 'DRAFT'"), map: "CmsRevision_one_draft_per_document_key")
+  @@unique([documentId], where: raw("status = 'PUBLISHED'"), map: "CmsRevision_one_published_per_document_key")
+  @@index([documentId, createdAt])
+  @@index([createdById])
+  @@index([publishedById])
+}
+
+model CmsSection {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  revisionId    String   @db.Uuid
+  key           String   @db.VarChar(100)
+  type          String   @db.VarChar(80)
+  position      Int
+  isVisible     Boolean  @default(true)
+  content       Json     @db.JsonB
+  imageUrl      String?  @db.Text
+  imagePublicId String?  @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  revision CmsRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  items    CmsSectionItem[]
+
+  @@unique([revisionId, key])
+  @@unique([revisionId, position])
+}
+
+model CmsSectionItem {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sectionId  String   @db.Uuid
+  position   Int
+  title      String?  @db.VarChar(200)
+  body       String?  @db.Text
+  url        String?  @db.Text
+  label      String?  @db.VarChar(120)
+  categoryId String?  @db.Uuid
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  section  CmsSection @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  category Category?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([sectionId, position])
+  @@index([categoryId])
 }
 
 model Brand {
