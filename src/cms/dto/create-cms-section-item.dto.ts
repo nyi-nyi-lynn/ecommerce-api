@@ -40,7 +40,10 @@ export class CreateCmsSectionItemDto {
   @IsOptional()
   @IsString()
   @Validate(IsCmsUrlConstraint)
-  @ApiPropertyOptional({ description: 'HTTP(S), mailto, or a root-relative URL.', nullable: true })
+  @ApiPropertyOptional({
+    description: 'HTTP(S), mailto, or a root-relative URL.',
+    nullable: true,
+  })
   url?: string | null;
 
   @TransformNullableString()

@@ -12,7 +12,7 @@ export class CmsPublicController {
   @Get()
   @ApiDocumentEndpoint({
     summary: 'List published CMS pages',
-    description: 'Returns paginated document metadata for pages with a current PUBLISHED revision.',
+    description: 'Returns paginated metadata for documents with PUBLISHED status.',
     errors: [400, 500],
     successExample: { items: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } },
   })
@@ -23,7 +23,7 @@ export class CmsPublicController {
   @Get(':key')
   @ApiDocumentEndpoint({
     summary: 'Get a published CMS page',
-    description: 'Returns only the current PUBLISHED revision, visible sections, and ordered section items.',
+    description: 'Returns only a PUBLISHED document, its visible sections, and ordered section items.',
     errors: [400, 404, 500],
   })
   get(@Param('key') key: string) {

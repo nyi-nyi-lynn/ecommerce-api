@@ -6,7 +6,6 @@
 generator client {
   provider        = "prisma-client"
   output          = "../src/generated/prisma"
-  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -52,10 +51,9 @@ enum StockMovementType {
   CANCELLATION
 }
 
-enum CmsRevisionStatus {
+enum CmsDocumentStatus {
   DRAFT
   PUBLISHED
-  ARCHIVED
 }
 
 model User {
@@ -75,8 +73,8 @@ model User {
   refreshTokens           RefreshToken[]
   paymentAttemptsReviewed PaymentAttempt[] @relation("PaymentAttemptReviewer")
   paymentEvents           PaymentEvent[]   @relation("PaymentEventActor")
-  cmsRevisionsCreated     CmsRevision[]    @relation("CmsRevisionCreator")
-  cmsRevisionsPublished   CmsRevision[]    @relation("CmsRevisionPublisher")
+  cmsDocumentsCreated     CmsDocument[]    @relation("CmsDocumentCreator")
+  cmsDocumentsPublished   CmsDocument[]    @relation("CmsDocumentPublisher")
   role                    Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
 }
 
@@ -142,46 +140,32 @@ model Category {
 }
 
 model CmsDocument {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  key       String   @unique @db.VarChar(100)
-  title     String   @db.VarChar(150)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  revisions CmsRevision[]
-}
-
-model CmsRevision {
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  documentId      String            @db.Uuid
-  revisionNumber  Int
-  status          CmsRevisionStatus @default(DRAFT)
+  key             String            @unique @db.VarChar(100)
+  title           String            @db.VarChar(150)
+  status          CmsDocumentStatus @default(DRAFT)
   seoTitle        String?           @db.VarChar(70)
   seoDescription  String?           @db.VarChar(160)
   ogImageUrl      String?           @db.Text
   ogImagePublicId String?           @db.Text
+  publishedAt     DateTime?
   createdById     String?           @db.Uuid
   publishedById   String?           @db.Uuid
-  publishedAt     DateTime?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  document    CmsDocument  @relation(fields: [documentId], references: [id], onDelete: Restrict)
-  createdBy   User?        @relation("CmsRevisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  publishedBy User?        @relation("CmsRevisionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation("CmsDocumentCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedBy User?        @relation("CmsDocumentPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
   sections    CmsSection[]
 
-  @@unique([documentId, revisionNumber])
-  @@unique([documentId], where: raw("status = 'DRAFT'"), map: "CmsRevision_one_draft_per_document_key")
-  @@unique([documentId], where: raw("status = 'PUBLISHED'"), map: "CmsRevision_one_published_per_document_key")
-  @@index([documentId, createdAt])
+  @@index([status, updatedAt])
   @@index([createdById])
   @@index([publishedById])
 }
 
 model CmsSection {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  revisionId    String   @db.Uuid
+  documentId    String   @db.Uuid
   key           String   @db.VarChar(100)
   type          String   @db.VarChar(80)
   position      Int
@@ -192,11 +176,11 @@ model CmsSection {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  revision CmsRevision      @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+  document CmsDocument     @relation(fields: [documentId], references: [id], onDelete: Cascade)
   items    CmsSectionItem[]
 
-  @@unique([revisionId, key])
-  @@unique([revisionId, position])
+  @@unique([documentId, key])
+  @@unique([documentId, position])
 }
 
 model CmsSectionItem {
@@ -211,7 +195,7 @@ model CmsSectionItem {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  section  CmsSection @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  section  CmsSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   category Category?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   @@unique([sectionId, position])

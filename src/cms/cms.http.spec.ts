@@ -15,16 +15,42 @@ import { CmsPublicController } from './cms-public.controller.js';
 describe('CMS HTTP', () => {
   const ADMIN_ID = '00000000-0000-4000-8000-000000000001';
   const CUSTOMER_ID = '00000000-0000-4000-8000-000000000002';
+  const DOCUMENT_ID = '00000000-0000-4000-8000-000000000003';
   let app: INestApplication;
   let jwt: JwtService;
   let permissions: Record<string, string[]>;
   let prisma: any;
   let uploads: any;
+  let stored: any;
 
   beforeEach(async () => {
+    stored = { id: DOCUMENT_ID, key: 'about-us', title: 'About', status: 'DRAFT', publishedAt: null, sections: [] };
     permissions = {
       [ADMIN_ID]: ['cms:read', 'cms:create', 'cms:update', 'cms:delete'],
       [CUSTOMER_ID]: [],
+    };
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: DOCUMENT_ID }]),
+      cmsDocument: {
+        findUnique: vi.fn(async () => stored),
+        update: vi.fn(async ({ data }) => Object.assign(stored, data)),
+        delete: vi.fn(async () => stored),
+      },
+      cmsSection: {
+        findUnique: vi.fn().mockResolvedValue({ documentId: DOCUMENT_ID, imagePublicId: null }),
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(async ({ data }) => ({ id: '00000000-0000-4000-8000-000000000004', ...data })),
+        update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data })),
+        delete: vi.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000004' }),
+      },
+      cmsSectionItem: {
+        findUnique: vi.fn().mockResolvedValue({ section: { documentId: DOCUMENT_ID } }),
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(async ({ data }) => ({ id: '00000000-0000-4000-8000-000000000005', ...data })),
+        update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data })),
+        delete: vi.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000005' }),
+      },
+      category: { findUnique: vi.fn().mockResolvedValue({ id: DOCUMENT_ID }) },
     };
     prisma = {
       user: {
@@ -34,22 +60,26 @@ describe('CMS HTTP', () => {
         })),
       },
       cmsDocument: {
-        create: vi.fn(async ({ data }) => ({ id: '00000000-0000-4000-8000-000000000003', ...data })),
+        create: vi.fn(async ({ data }) => ({ id: DOCUMENT_ID, ...data })),
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
+        findUnique: vi.fn(async () => stored),
+        findUniqueOrThrow: vi.fn(async () => stored),
         count: vi.fn().mockResolvedValue(0),
-        findUnique: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn(async ({ where, data }) => {
+          if (stored.status !== where.status) return { count: 0 };
+          Object.assign(stored, data);
+          return { count: 1 };
+        }),
       },
-      cmsRevision: { findUnique: vi.fn().mockResolvedValue(null) },
-      $transaction: vi.fn(async (callback) => callback({
-        $queryRaw: vi.fn().mockResolvedValue([{ id: '00000000-0000-4000-8000-000000000003' }]),
-        cmsDocument: { findUnique: vi.fn().mockResolvedValue({ id: '00000000-0000-4000-8000-000000000003', key: 'home', title: 'Home' }) },
-        cmsRevision: {
-          findFirst: vi.fn().mockResolvedValue(null),
-          findUnique: vi.fn().mockResolvedValue({ status: 'DRAFT', sections: [] }),
-          update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data, sections: [] })),
-        },
-      })),
+      cmsSection: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findUnique: vi.fn().mockResolvedValue({ documentId: DOCUMENT_ID, imagePublicId: null }),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      cmsSectionItem: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue(null) },
+      category: { findUnique: vi.fn().mockResolvedValue({ id: DOCUMENT_ID }) },
+      $transaction: vi.fn(async (callback) => callback(tx)),
     };
     uploads = {
       uploadCmsImage: vi.fn().mockResolvedValue({ secure_url: 'https://cdn.test/cms.png', public_id: 'ecommerce/cms/users/admin/cms' }),
@@ -59,10 +89,7 @@ describe('CMS HTTP', () => {
       imports: [JwtModule.register({ secret: 'cms-test-secret' })],
       controllers: [CmsController, CmsPublishingController, CmsPublicController],
       providers: [
-        CmsService,
-        JwtAuthGuard,
-        PermissionsGuard,
-        Reflector,
+        CmsService, JwtAuthGuard, PermissionsGuard, Reflector,
         { provide: PrismaService, useValue: prisma },
         { provide: UploadsService, useValue: uploads },
       ],
@@ -75,105 +102,72 @@ describe('CMS HTTP', () => {
 
   it('uses database permissions, rejects guests/customers, and returns the shared envelope', async () => {
     await request(app.getHttpServer()).post('/api/cms/documents').send({ key: 'home', title: 'Home' }).expect(401);
-    await request(app.getHttpServer())
-      .post('/api/cms/documents')
-      .set('Authorization', `Bearer ${token(CUSTOMER_ID)}`)
-      .send({ key: 'home', title: 'Home' })
-      .expect(403);
-
-    const response = await request(app.getHttpServer())
-      .post('/api/cms/documents')
-      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .send({ key: 'home', title: 'Home' })
-      .expect(201);
+    await request(app.getHttpServer()).post('/api/cms/documents').set('Authorization', `Bearer ${token(CUSTOMER_ID)}`).send({ key: 'home', title: 'Home' }).expect(403);
+    const response = await request(app.getHttpServer()).post('/api/cms/documents')
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).send({ key: 'home', title: 'Home' }).expect(201);
     expect(response.body).toMatchObject({ success: true, data: { key: 'home', title: 'Home' }, path: '/api/cms/documents' });
   });
 
-  it('rejects unknown DTO properties and observes permission changes from the database', async () => {
-    await request(app.getHttpServer())
-      .post('/api/cms/documents')
-      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .send({ key: 'home', title: 'Home', ownerId: ADMIN_ID })
-      .expect(400);
+  it('rejects unknown DTO properties and observes dynamic permission changes', async () => {
+    await request(app.getHttpServer()).post('/api/cms/documents')
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).send({ key: 'home', title: 'Home', ownerId: ADMIN_ID }).expect(400);
     permissions[ADMIN_ID] = ['cms:read'];
-    await request(app.getHttpServer())
-      .post('/api/cms/documents')
-      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .send({ key: 'home', title: 'Home' })
-      .expect(403);
+    await request(app.getHttpServer()).post('/api/cms/documents')
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).send({ key: 'home', title: 'Home' }).expect(403);
   });
 
-  it('requires the database-backed media:upload permission only when a file is attached', async () => {
+  it('requires database-backed media:upload for document images', async () => {
     permissions[ADMIN_ID] = ['cms:create'];
-    await request(app.getHttpServer())
-      .post('/api/cms/documents/00000000-0000-4000-8000-000000000010/revisions')
-      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .field('seoTitle', 'Home')
-      .attach('image', Buffer.from('image'), 'image.png')
-      .expect(403);
+    await request(app.getHttpServer()).post('/api/cms/documents')
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).field('key', 'home').field('title', 'Home')
+      .attach('image', Buffer.from('image'), 'image.png').expect(403);
     expect(uploads.uploadCmsImage).not.toHaveBeenCalled();
   });
 
-  it('serves published pages without authentication and returns only public fields', async () => {
-    prisma.cmsDocument.findFirst.mockResolvedValue({
-      key: 'home',
-      title: 'Home',
-      revisions: [{
-        seoTitle: 'Home SEO',
-        seoDescription: 'Welcome',
-        ogImageUrl: 'https://cdn.test/og.png',
-        sections: [{
-          key: 'hero', type: 'hero', position: 0, content: { headline: 'Hello' }, imageUrl: null,
-          items: [{ position: 0, title: 'Shop', body: null, url: '/products', label: 'Browse', category: null }],
-        }],
-      }],
-    });
-    const response = await request(app.getHttpServer()).get('/api/cms/pages/home').expect(200);
-    expect(response.body.data).toMatchObject({ key: 'home', title: 'Home', seoTitle: 'Home SEO' });
-    expect(response.body.data.sections[0].content).toEqual({ headline: 'Hello' });
+  it('serves only published documents publicly without authentication', async () => {
+    stored = {
+      key: 'about-us', title: 'About', seoTitle: 'About SEO', seoDescription: 'About description', ogImageUrl: 'https://cdn.test/og.png',
+      status: 'PUBLISHED',
+      sections: [{ key: 'hero', type: 'hero', position: 0, content: { headline: 'Hello' }, imageUrl: null, items: [] }],
+    };
+    const response = await request(app.getHttpServer()).get('/api/cms/pages/about-us').expect(200);
+    expect(response.body.data).toMatchObject({ key: 'about-us', title: 'About', seoTitle: 'About SEO' });
     expect(response.body.data).not.toHaveProperty('createdById');
-    expect(response.body.data).not.toHaveProperty('revisionId');
+    expect(prisma.cmsDocument.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: 'about-us', status: 'PUBLISHED' },
+      select: expect.not.objectContaining({ createdById: true, publishedById: true }),
+    }));
+    expect(response.body.data.sections[0].content).toEqual({ headline: 'Hello' });
+    stored = null;
+    await request(app.getHttpServer()).get('/api/cms/pages/draft-only').expect(404);
   });
 
-  it('protects draft preview and publishing with their database permissions', async () => {
-    const documentId = '00000000-0000-4000-8000-000000000003';
-    await request(app.getHttpServer())
-      .get(`/api/admin/cms/documents/${documentId}/preview`)
-      .set('Authorization', `Bearer ${token(CUSTOMER_ID)}`)
-      .expect(403);
-
+  it('protects publish and current-content preview with database permissions', async () => {
+    await request(app.getHttpServer()).post(`/api/admin/cms/documents/${DOCUMENT_ID}/publish`)
+      .set('Authorization', `Bearer ${token(CUSTOMER_ID)}`).expect(403);
     permissions[ADMIN_ID] = ['cms:read'];
-    const preview = await request(app.getHttpServer())
-      .get(`/api/admin/cms/documents/${documentId}/preview`)
-      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .expect(404);
-    expect(preview.body).toMatchObject({ success: false, statusCode: 404 });
-
-    await request(app.getHttpServer())
-      .post(`/api/admin/cms/documents/${documentId}/publish`)
-      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .expect(403);
+    const preview = await request(app.getHttpServer()).get(`/api/admin/cms/documents/${DOCUMENT_ID}/preview`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).expect(200);
+    expect(preview.body.data).toMatchObject({ key: 'about-us', status: 'DRAFT' });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('allows a cms:read user to preview only the current DRAFT without changing status', async () => {
-    const documentId = '00000000-0000-4000-8000-000000000003';
-    prisma.cmsDocument.findUnique.mockResolvedValue({
-      id: documentId,
-      key: 'home',
-      title: 'Home',
-      revisions: [{
-        id: '00000000-0000-4000-8000-000000000004',
-        revisionNumber: 2,
-        status: 'DRAFT',
-        seoTitle: 'Draft SEO',
-        sections: [],
-      }],
-    });
-    const response = await request(app.getHttpServer())
-      .get(`/api/admin/cms/documents/${documentId}/preview`)
+  it('publishes and unpublishes the direct document status', async () => {
+    const response = await request(app.getHttpServer()).post(`/api/admin/cms/documents/${DOCUMENT_ID}/publish`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).expect(201);
+    expect(response.body.data.status).toBe('PUBLISHED');
+    const unpublish = await request(app.getHttpServer()).post(`/api/admin/cms/documents/${DOCUMENT_ID}/unpublish`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).expect(201);
+    expect(unpublish.body.data).toMatchObject({ status: 'DRAFT', publishedAt: null });
+  });
+
+  it('creates sections under a document and items under a section', async () => {
+    const section = await request(app.getHttpServer()).post(`/api/cms/documents/${DOCUMENT_ID}/sections`)
       .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .expect(200);
-    expect(response.body.data.revision.status).toBe('DRAFT');
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+      .send({ key: 'hero', type: 'hero', position: 0, content: { headline: 'Welcome' } }).expect(201);
+    expect(section.body.data.documentId).toBe(DOCUMENT_ID);
+    const item = await request(app.getHttpServer()).post(`/api/cms/sections/${section.body.data.id}/items`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`).send({ position: 0, title: 'Shop', url: '/products' }).expect(201);
+    expect(item.body.data.position).toBe(0);
   });
 });

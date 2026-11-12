@@ -31,26 +31,39 @@ export class CmsPublishingController {
   @RequirePermissions('cms:update')
   @ApiParam({ name: 'documentId', format: 'uuid' })
   @ApiDocumentEndpoint({
-    summary: 'Publish the current CMS draft',
-    description: `Publishes the document's DRAFT revision, archiving the previous PUBLISHED revision atomically. ${DYNAMIC_RBAC_DESCRIPTION}`,
-    errors: [400, 401, 403, 404, 409, 500],
+    summary: 'Publish CMS document',
+    description: `Sets the document status to PUBLISHED. Repeated requests are idempotent. ${DYNAMIC_RBAC_DESCRIPTION}`,
+    errors: [400, 401, 403, 404, 500],
   })
   publish(
-    @Param('documentId', ParseUUIDPipe) documentId: string,
+    @Param('documentId', ParseUUIDPipe) id: string,
     @CurrentUser('sub') publisherId: string,
   ) {
-    return this.cms.publishDocument(documentId, publisherId);
+    return this.cms.publishDocument(id, publisherId);
+  }
+
+  @Post(':documentId/unpublish')
+  @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
+  @RequirePermissions('cms:update')
+  @ApiParam({ name: 'documentId', format: 'uuid' })
+  @ApiDocumentEndpoint({
+    summary: 'Unpublish CMS document',
+    description: `Returns the document to DRAFT and clears publishedAt. Repeated requests are idempotent. ${DYNAMIC_RBAC_DESCRIPTION}`,
+    errors: [400, 401, 403, 404, 500],
+  })
+  unpublish(@Param('documentId', ParseUUIDPipe) id: string) {
+    return this.cms.unpublishDocument(id);
   }
 
   @Get(':documentId/preview')
   @RequirePermissions('cms:read')
   @ApiParam({ name: 'documentId', format: 'uuid' })
   @ApiDocumentEndpoint({
-    summary: 'Preview a CMS draft',
-    description: `Returns only the current DRAFT revision for an authorized preview. ${DYNAMIC_RBAC_DESCRIPTION}`,
+    summary: 'Preview current CMS document',
+    description: `Returns the current document and its editable content regardless of publication status. ${DYNAMIC_RBAC_DESCRIPTION}`,
     errors: [400, 401, 403, 404, 500],
   })
-  preview(@Param('documentId', ParseUUIDPipe) documentId: string) {
-    return this.cms.getDraftPreview(documentId);
+  preview(@Param('documentId', ParseUUIDPipe) id: string) {
+    return this.cms.previewDocument(id);
   }
 }
