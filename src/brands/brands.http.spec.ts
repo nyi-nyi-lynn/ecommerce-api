@@ -4,6 +4,7 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { createTestHttpApp } from '../../test/helpers/create-test-http-app.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { UploadsService } from '../modules/uploads/uploads.service.js';
 import { PermissionsGuard } from '../rbac/permissions.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { BrandsController } from './brands.controller.js';
@@ -18,6 +19,10 @@ describe('Brands HTTP', () => {
 
   let app: INestApplication;
   let prisma: any;
+  let uploads: {
+    uploadBrandImage: ReturnType<typeof vi.fn>;
+    deleteBrandImage: ReturnType<typeof vi.fn>;
+  };
   let jwt: JwtService;
   let rows: any[];
 
@@ -127,6 +132,11 @@ describe('Brands HTTP', () => {
       },
     };
 
+    uploads = {
+      uploadBrandImage: vi.fn(),
+      deleteBrandImage: vi.fn().mockResolvedValue(true),
+    };
+
     app = await createTestHttpApp({
       imports: [JwtModule.register({ secret: 'brands-test-secret' })],
       controllers: [BrandsController],
@@ -136,6 +146,7 @@ describe('Brands HTTP', () => {
         PermissionsGuard,
         Reflector,
         { provide: PrismaService, useValue: prisma },
+        { provide: UploadsService, useValue: uploads },
       ],
     });
     jwt = app.get(JwtService);
@@ -236,5 +247,121 @@ describe('Brands HTTP', () => {
       .delete(`/api/brands/${BRAND_2}`)
       .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
       .expect(200);
+  });
+
+  it('supports partial updates (single-field, multi-field, multipart with empty fields, file-only, and nullable description) and rejects invalid or null non-nullable fields', async () => {
+    // 1. Update single field only
+    const single = await request(app.getHttpServer())
+      .patch(`/api/brands/${BRAND_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+      .send({ name: '  Samsung Electronics  ' })
+      .expect(200);
+    expect(single.body.data).toMatchObject({
+      id: BRAND_1,
+      name: 'Samsung Electronics',
+      slug: 'samsung',
+      description: 'Global electronics brand.',
+      isActive: true,
+    });
+    expect(prisma.brand.update).toHaveBeenLastCalledWith({
+      where: { id: BRAND_1 },
+      data: { name: 'Samsung Electronics' },
+    });
+
+    // 2. Update multiple fields
+    const multi = await request(app.getHttpServer())
+      .patch(`/api/brands/${BRAND_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+      .send({
+        slug: '  samsung-electronics  ',
+        description: 'Updated brand description.',
+        isActive: false,
+      })
+      .expect(200);
+    expect(multi.body.data).toMatchObject({
+      id: BRAND_1,
+      name: 'Samsung Electronics',
+      slug: 'samsung-electronics',
+      description: 'Updated brand description.',
+      isActive: false,
+    });
+
+    // 3. Clear nullable description with explicit null
+    const cleared = await request(app.getHttpServer())
+      .patch(`/api/brands/${BRAND_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+      .send({ description: null })
+      .expect(200);
+    expect(cleared.body.data.description).toBeNull();
+
+    // 3b. Update with a new description and verify it is persisted
+    const newDesc = await request(app.getHttpServer())
+      .patch(`/api/brands/${BRAND_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+      .send({ description: '  Restored brand description.  ' })
+      .expect(200);
+    expect(newDesc.body.data.description).toBe('Restored brand description.');
+
+    // 4. Multipart form-data with empty string fields preserves existing values
+    const multipartPartial = await request(app.getHttpServer())
+      .patch(`/api/brands/${BRAND_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+      .field('name', 'Samsung Global')
+      .field('slug', '')
+      .field('description', '')
+      .field('isActive', '')
+      .expect(200);
+    expect(multipartPartial.body.data).toMatchObject({
+      id: BRAND_1,
+      name: 'Samsung Global',
+      slug: 'samsung-electronics',
+      description: 'Restored brand description.',
+      isActive: false,
+    });
+    expect(prisma.brand.update).toHaveBeenLastCalledWith({
+      where: { id: BRAND_1 },
+      data: { name: 'Samsung Global' },
+    });
+
+    // 5. File-only update via multipart/form-data
+    uploads.uploadBrandImage.mockResolvedValueOnce({
+      secure_url: 'https://cdn.example.com/brand-new.jpg',
+      public_id: `ecommerce/brands/users/${USER_ADMIN}/brand-new`,
+    });
+    const fileOnly = await request(app.getHttpServer())
+      .patch(`/api/brands/${BRAND_1}`)
+      .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+      .attach('image', Buffer.from([0xff, 0xd8, 0xff, 0xd9]), {
+        filename: 'brand.jpg',
+        contentType: 'image/jpeg',
+      })
+      .expect(200);
+    expect(fileOnly.body.data).toMatchObject({
+      id: BRAND_1,
+      name: 'Samsung Global',
+      slug: 'samsung-electronics',
+      imageUrl: 'https://cdn.example.com/brand-new.jpg',
+    });
+
+    // 6. Reject explicit null on non-nullable fields, whitespace-only strings, and unknown properties
+    prisma.brand.update.mockClear();
+    for (const invalidPayload of [
+      { name: null },
+      { name: '' },
+      { name: '   ' },
+      { slug: null },
+      { slug: '' },
+      { slug: '   ' },
+      { isActive: null },
+      { isActive: 'not-a-boolean' },
+      { unknownProperty: 'rejected' },
+    ]) {
+      await request(app.getHttpServer())
+        .patch(`/api/brands/${BRAND_1}`)
+        .set('Authorization', `Bearer ${token(USER_ADMIN)}`)
+        .send(invalidPayload)
+        .expect(400);
+    }
+    expect(prisma.brand.update).not.toHaveBeenCalled();
   });
 });

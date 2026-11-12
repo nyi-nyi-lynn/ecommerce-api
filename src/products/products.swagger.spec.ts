@@ -328,7 +328,10 @@ describe('Swagger query parameters', () => {
       // Check component schemas for UUID fields
       const schemas = (document.components?.schemas ?? {}) as Record<
         string,
-        { properties?: Record<string, Record<string, unknown>> }
+        {
+          required?: string[];
+          properties?: Record<string, Record<string, unknown>>;
+        }
       >;
       expect(schemas.AssignUserRoleDto?.properties?.roleId).toMatchObject({
         type: 'string',
@@ -367,6 +370,27 @@ describe('Swagger query parameters', () => {
         type: 'string',
         format: 'uuid',
       });
+
+      // Verify required fields on Create DTOs vs optional fields on PartialType Update DTOs
+      expect(schemas.CreateCategoryDto?.required).toEqual(
+        expect.arrayContaining(['name', 'slug']),
+      );
+      expect(schemas.UpdateCategoryDto?.required ?? []).toHaveLength(0);
+
+      expect(schemas.CreateBrandDto?.required).toEqual(
+        expect.arrayContaining(['name', 'slug']),
+      );
+      expect(schemas.UpdateBrandDto?.required ?? []).toHaveLength(0);
+
+      expect(schemas.CreateProductDto?.required).toEqual(
+        expect.arrayContaining(['name', 'slug', 'sku', 'price', 'categoryId']),
+      );
+      expect(schemas.UpdateProductDto?.required ?? []).toHaveLength(0);
+
+      expect(schemas.CreateRoleDto?.required).toEqual(
+        expect.arrayContaining(['name']),
+      );
+      expect(schemas.UpdateRoleDto?.required ?? []).toHaveLength(0);
     } finally {
       await app.close();
     }

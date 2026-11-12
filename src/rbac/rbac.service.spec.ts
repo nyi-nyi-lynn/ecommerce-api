@@ -330,6 +330,7 @@ describe('RbacService', () => {
     expect(await service.listRoles()).toHaveLength(3);
     expect(await service.listPermissions()).toHaveLength(2);
 
+    // 1. Create a role with a non-null description
     const created = await service.createRole({
       name: '  AUDITOR  ',
       description: '  Read-only auditor  ',
@@ -343,11 +344,51 @@ describe('RbacService', () => {
       service.createRole({ name: 'AUDITOR' }),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    const updated = await service.updateRole(created.id, {
+    // 2 & 3. PATCH only its name -> verify existing description remains unchanged
+    const updatedNameOnly = await service.updateRole(created.id, {
+      name: '  SECURITY_AUDITOR  ',
+    });
+    expect(updatedNameOnly).toMatchObject({
+      name: 'SECURITY_AUDITOR',
+      description: 'Read-only auditor',
+    });
+    expect(prisma.role.update).toHaveBeenLastCalledWith({
+      where: { id: created.id },
+      data: { name: 'SECURITY_AUDITOR' },
+    });
+
+    // 4 & 5. PATCH with description: null -> verify description is cleared
+    const updatedWithNullDescription = await service.updateRole(created.id, {
+      description: null,
+    });
+    expect(updatedWithNullDescription).toMatchObject({
+      name: 'SECURITY_AUDITOR',
+      description: null,
+    });
+    expect(prisma.role.update).toHaveBeenLastCalledWith({
+      where: { id: created.id },
+      data: { description: null },
+    });
+
+    // 6 & 7. PATCH with a new description -> verify description is updated
+    const updatedWithNewDescription = await service.updateRole(created.id, {
+      description: '  Updated auditor description  ',
+    });
+    expect(updatedWithNewDescription).toMatchObject({
+      name: 'SECURITY_AUDITOR',
+      description: 'Updated auditor description',
+    });
+    expect(prisma.role.update).toHaveBeenLastCalledWith({
+      where: { id: created.id },
+      data: { description: 'Updated auditor description' },
+    });
+
+    // Whitespace-only description normalizes to null when explicitly provided
+    const updatedWhitespaceDescription = await service.updateRole(created.id, {
       name: '  COMPLIANCE  ',
       description: '   ',
     });
-    expect(updated).toMatchObject({
+    expect(updatedWhitespaceDescription).toMatchObject({
       name: 'COMPLIANCE',
       description: null,
     });

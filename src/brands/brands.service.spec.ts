@@ -228,4 +228,58 @@ describe('BrandsService', () => {
     );
     expect(uploads.deleteBrandImage).not.toHaveBeenCalled();
   });
+
+  it('preserves existing description when omitted on update, clears it when null, and updates it when a new description is provided', async () => {
+    let stored: any = null;
+    prisma.brand.create.mockImplementationOnce(async ({ data }: any) => {
+      stored = { id: BRAND_ID, ...data };
+      return stored;
+    });
+    prisma.brand.findUnique.mockImplementation(async ({ where }: any) =>
+      stored && where.id === stored.id ? stored : null,
+    );
+    prisma.brand.update.mockImplementation(async ({ data }: any) => {
+      stored = { ...stored, ...data };
+      return stored;
+    });
+
+    // 1. Create a brand with a non-null description
+    const created = await service.create({
+      name: 'Samsung',
+      slug: 'samsung',
+      description: 'Initial brand description',
+    });
+    expect(created.description).toBe('Initial brand description');
+
+    // 2 & 3. PATCH only its name -> existing description remains unchanged
+    const afterNamePatch = await service.update(BRAND_ID, {
+      name: '  Samsung Electronics  ',
+    });
+    expect(afterNamePatch.name).toBe('Samsung Electronics');
+    expect(afterNamePatch.description).toBe('Initial brand description');
+    expect(prisma.brand.update).toHaveBeenLastCalledWith({
+      where: { id: BRAND_ID },
+      data: { name: 'Samsung Electronics' },
+    });
+
+    // 4 & 5. PATCH with description: null -> description is cleared
+    const afterClearPatch = await service.update(BRAND_ID, {
+      description: null,
+    });
+    expect(afterClearPatch.description).toBeNull();
+    expect(prisma.brand.update).toHaveBeenLastCalledWith({
+      where: { id: BRAND_ID },
+      data: { description: null },
+    });
+
+    // 6 & 7. PATCH with a new description -> description is updated
+    const afterNewDescPatch = await service.update(BRAND_ID, {
+      description: '  New brand description  ',
+    });
+    expect(afterNewDescPatch.description).toBe('New brand description');
+    expect(prisma.brand.update).toHaveBeenLastCalledWith({
+      where: { id: BRAND_ID },
+      data: { description: 'New brand description' },
+    });
+  });
 });

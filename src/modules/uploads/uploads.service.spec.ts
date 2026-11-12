@@ -278,6 +278,40 @@ describe('UploadsService', () => {
     expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
   });
 
+  it('uploads and deletes CMS images in a user-scoped folder', async () => {
+    cloudinary.uploader.upload_stream.mockImplementation(
+      (_options: unknown, callback: (error: null, result: any) => void) => ({
+        end: () =>
+          callback(null, {
+            secure_url: 'https://res.cloudinary.com/demo/image/upload/cms.jpg',
+            public_id: `ecommerce/cms/users/${USER_ID}/cms`,
+            format: 'jpg',
+            width: 800,
+            height: 600,
+            bytes: 123,
+          }),
+      }),
+    );
+    const image = imageFile();
+    await expect(service.uploadCmsImage(image, USER_ID)).resolves.toMatchObject({
+      secure_url: 'https://res.cloudinary.com/demo/image/upload/cms.jpg',
+      public_id: `ecommerce/cms/users/${USER_ID}/cms`,
+    });
+    expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folder: `ecommerce/cms/users/${USER_ID}`,
+        resource_type: 'image',
+      }),
+      expect.any(Function),
+    );
+    await expect(
+      service.deleteCmsImage(`ecommerce/cms/users/${USER_ID}/cms`),
+    ).resolves.toBe(true);
+    await expect(
+      service.deleteCmsImage(`ecommerce/products/users/${USER_ID}/wrong-folder`),
+    ).resolves.toBe(false);
+  });
+
   it('uploads payment proof images into ecommerce/payments/users/{userId} and validates files', async () => {
     cloudinary.uploader.upload_stream.mockImplementation(
       (_options: unknown, callback: (error: null, result: any) => void) => ({

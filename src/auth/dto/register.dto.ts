@@ -1,14 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import {
+  TransformNullableString,
+  TransformTrimmedString,
+} from '../../common/transformers/dto-transforms.util.js';
 
 export class RegisterDto {
+  @TransformTrimmedString()
   @IsString()
+  @IsNotEmpty()
   @MaxLength(100)
   @ApiProperty({
     description: 'Customer display name.',
@@ -39,12 +46,14 @@ export class RegisterDto {
   })
   password: string;
 
+  @TransformNullableString()
   @IsOptional()
   @IsString()
   @MaxLength(30)
   @ApiPropertyOptional({
     description: 'Contact phone.',
     type: String,
+    nullable: true,
     example: 'phone-example',
     maxLength: 30,
   })

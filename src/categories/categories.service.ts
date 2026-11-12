@@ -116,7 +116,8 @@ export class CategoriesService {
         slug: dto.slug.trim(),
       }),
       ...(dto.description !== undefined && {
-        description: dto.description.trim() || null,
+        description:
+          dto.description === null ? null : dto.description.trim() || null,
       }),
       ...(dto.isActive !== undefined && {
         isActive: dto.isActive,

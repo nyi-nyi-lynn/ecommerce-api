@@ -32,6 +32,7 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
   let app: INestApplication;
   let prisma: any;
   let refreshRows: Map<string, any>;
+  let assignedPermissions: Map<string, string[]>;
   const customer = {
     id: CUSTOMER_ID,
     name: 'HTTP Customer',
@@ -42,6 +43,7 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
     role: { name: 'CUSTOMER' },
     isActive: true,
     createdAt: new Date('2025-01-01T00:00:00Z'),
+    updatedAt: new Date('2025-01-02T00:00:00Z'),
   };
   const admin = {
     ...customer,
@@ -54,6 +56,11 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
 
   beforeEach(async () => {
     refreshRows = new Map();
+    assignedPermissions = new Map([
+      [ROLE_ADMIN, ['category:create', 'category:update', 'category:delete']],
+      [ROLE_CUSTOMER, []],
+    ]);
+    customer.isActive = true;
     const findUser = (where: { id?: string; email?: string }) => {
       if (where.id === admin.id || where.email === admin.email) return admin;
       if (where.id === customer.id || where.email === customer.email)
@@ -118,17 +125,34 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
     };
     prisma = {
       user: {
-        findUnique: vi.fn(async ({ where, select }) => {
+        findUnique: vi.fn(async ({ where, select, include }) => {
           const found = findUser(where);
           if (!found) return null;
           if (select?.role?.select?.permissions) {
+            const permissions = (
+              assignedPermissions.get(found.roleId) ?? []
+            ).map((code) => ({ permission: { code } }));
+            const selected = Object.fromEntries(
+              Object.entries(select)
+                .filter(([key, include]) => key !== 'role' && include === true)
+                .map(([key]) => [key, (found as Record<string, unknown>)[key]]),
+            );
             return {
-              isActive: found.isActive,
+              ...selected,
               role: {
-                permissions: (found.id === admin.id
-                  ? ['category:create', 'category:update', 'category:delete']
-                  : []
-                ).map((code) => ({ permission: { code } })),
+                ...(select.role.select.name ? { name: found.role.name } : {}),
+                permissions,
+              },
+            };
+          }
+          if (include?.role?.select?.permissions) {
+            return {
+              ...found,
+              role: {
+                name: found.role.name,
+                permissions: (assignedPermissions.get(found.roleId) ?? []).map(
+                  (code) => ({ permission: { code } }),
+                ),
               },
             };
           }
@@ -232,6 +256,7 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
     expect(loggedIn.status).toBe(201);
     expect(loggedIn.body.data).toMatchObject({
       user: { email: customer.email },
+      permissions: [],
       accessToken: expect.any(String),
       refreshToken: expect.any(String),
     });
@@ -284,7 +309,10 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
       .set('Authorization', `Bearer ${loggedIn.body.data.accessToken}`)
       .expect(200)
       .expect(({ body }) => {
-        expect(body.data.email).toBe(customer.email);
+        expect(body.data.user.email).toBe(customer.email);
+        expect(body.data.user.roleId).toBe(ROLE_CUSTOMER);
+        expect(body.data.permissions).toEqual([]);
+        expect(body.data.user).not.toHaveProperty('passwordHash');
       });
 
     const jwtService = app.get(JwtService);
@@ -302,6 +330,50 @@ describe('Auth and Categories HTTP integration (isolated Prisma)', () => {
         .expect(401);
     }
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('returns login permissions from current RolePermission assignments', async () => {
+    assignedPermissions.set(ROLE_CUSTOMER, ['order:read', 'cart:read']);
+
+    const loggedIn = await login();
+
+    expect(loggedIn.body.data.permissions).toEqual(['cart:read', 'order:read']);
+    expect(loggedIn.body.data.user.role).toBe('CUSTOMER');
+    expect(loggedIn.body.data.user).not.toHaveProperty('passwordHash');
+  });
+
+  it('reflects permission changes on /me without trusting JWT role or permissions', async () => {
+    assignedPermissions.set(ROLE_CUSTOMER, ['order:read']);
+    const loggedIn = await login();
+    assignedPermissions.set(ROLE_CUSTOMER, ['cart:read']);
+
+    const current = await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${loggedIn.body.data.accessToken}`)
+      .expect(200);
+
+    expect(current.body.data.permissions).toEqual(['cart:read']);
+    expect(current.body.data.permissions).not.toContain('order:read');
+  });
+
+  it('rejects inactive and missing users on /me even with a valid access token', async () => {
+    const loggedIn = await login();
+    customer.isActive = false;
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${loggedIn.body.data.accessToken}`)
+      .expect(401);
+    customer.isActive = true;
+
+    const missingUserToken = await app.get(JwtService).signAsync({
+      sub: '00000000-0000-4000-8000-000000000099',
+      email: 'missing@example.test',
+      role: 'CUSTOMER',
+    });
+    await request(app.getHttpServer())
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${missingUserToken}`)
+      .expect(401);
   });
 
   it('keeps category reads public and protects writes with database permissions', async () => {

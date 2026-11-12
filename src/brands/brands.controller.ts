@@ -34,6 +34,7 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import { StripEmptyMultipartFieldsInterceptor } from '../common/interceptors/strip-empty-multipart-fields.interceptor.js';
 import { Throttle } from '@nestjs/throttler';
 import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
@@ -100,6 +101,7 @@ export class BrandsController {
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['name', 'slug'],
       properties: {
         name: { type: 'string', example: 'Samsung', maxLength: 150 },
         slug: { type: 'string', example: 'samsung', maxLength: 160 },
@@ -150,13 +152,13 @@ export class BrandsController {
     schema: {
       type: 'object',
       properties: {
-        name: { type: 'string', example: 'Samsung', maxLength: 150 },
-        slug: { type: 'string', example: 'samsung', maxLength: 160 },
+        name: { type: 'string', maxLength: 150 },
+        slug: { type: 'string', maxLength: 160 },
         description: {
           type: 'string',
-          example: 'Global electronics and mobile manufacturer.',
+          nullable: true,
         },
-        isActive: { type: 'boolean', example: true },
+        isActive: { type: 'boolean' },
         image: { type: 'string', format: 'binary' },
       },
     },
@@ -166,6 +168,7 @@ export class BrandsController {
       storage: multer.memoryStorage(),
       limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
     }),
+    StripEmptyMultipartFieldsInterceptor,
   )
   @ApiDocumentEndpoint({
     summary: 'Update brand',

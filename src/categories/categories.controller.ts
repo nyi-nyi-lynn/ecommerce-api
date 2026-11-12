@@ -24,6 +24,7 @@ import {
   ApiBearerAuth,
   ApiBody,
   ApiConsumes,
+  ApiExtraModels,
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
@@ -31,6 +32,7 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import { StripEmptyMultipartFieldsInterceptor } from '../common/interceptors/strip-empty-multipart-fields.interceptor.js';
 import { Throttle } from '@nestjs/throttler';
 import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
@@ -51,6 +53,7 @@ const CATEGORY_EXAMPLE = {
 
 @Controller('categories')
 @ApiTags('Categories')
+@ApiExtraModels(CreateCategoryDto, UpdateCategoryDto)
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
@@ -156,6 +159,7 @@ export class CategoriesController {
       storage: multer.memoryStorage(),
       limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
     }),
+    StripEmptyMultipartFieldsInterceptor,
   )
   @ApiDocumentEndpoint({
     summary: 'Update category',

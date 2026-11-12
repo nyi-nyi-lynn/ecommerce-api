@@ -1,11 +1,7 @@
 import {
   Body,
-  type CallHandler,
   Controller,
-  type ExecutionContext,
   Get,
-  Injectable,
-  type NestInterceptor,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -16,7 +12,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
 import multer from 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -38,30 +33,10 @@ import {
   ApiDocumentEndpoint,
   DYNAMIC_RBAC_DESCRIPTION,
 } from '../common/swagger/swagger.decorators.js';
+import { StripEmptyMultipartFieldsInterceptor } from '../common/interceptors/strip-empty-multipart-fields.interceptor.js';
 import { Throttle } from '@nestjs/throttler';
 import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
 import { MAX_PRODUCT_IMAGE_BYTES } from '../modules/uploads/uploads.service.js';
-
-@Injectable()
-class StripEmptyMultipartFieldsInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler) {
-    const request = context.switchToHttp().getRequest<Request>();
-    const contentType = request.headers?.['content-type'] ?? '';
-    if (
-      contentType.toLowerCase().includes('multipart/form-data') &&
-      request.body &&
-      typeof request.body === 'object'
-    ) {
-      const body = request.body as Record<string, unknown>;
-      for (const [key, value] of Object.entries(body)) {
-        if (value === '') {
-          delete body[key];
-        }
-      }
-    }
-    return next.handle();
-  }
-}
 
 const PRODUCT_ID_EXAMPLE = '550e8400-e29b-41d4-a716-446655440000';
 const CATEGORY_ID_EXAMPLE = '11111111-1111-4111-8111-111111111111';
@@ -154,6 +129,7 @@ export class ProductsController {
       storage: multer.memoryStorage(),
       limits: { fileSize: MAX_PRODUCT_IMAGE_BYTES, files: 1 },
     }),
+    StripEmptyMultipartFieldsInterceptor,
   )
   @ApiDocumentEndpoint({
     summary: 'Create product',

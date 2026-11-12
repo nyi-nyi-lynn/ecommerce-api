@@ -34,6 +34,28 @@ const AUTH_SESSION_EXAMPLE = {
     '550e8400-e29b-41d4-a716-446655440000.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ',
 };
 
+const AUTH_LOGIN_EXAMPLE = {
+  user: {
+    ...AUTH_USER_EXAMPLE,
+    roleId: '550e8400-e29b-41d4-a716-446655440001',
+    isActive: true,
+    updatedAt: '2026-10-30T08:00:00.000Z',
+  },
+  permissions: ['category:read', 'product:read'],
+  accessToken: AUTH_SESSION_EXAMPLE.accessToken,
+  refreshToken: AUTH_SESSION_EXAMPLE.refreshToken,
+};
+
+const AUTH_PROFILE_EXAMPLE = {
+  user: {
+    ...AUTH_USER_EXAMPLE,
+    roleId: '550e8400-e29b-41d4-a716-446655440001',
+    isActive: true,
+    updatedAt: '2026-10-30T08:00:00.000Z',
+  },
+  permissions: ['category:read', 'product:read'],
+};
+
 @Controller('auth')
 @ApiTags('Authentication')
 export class AuthController {
@@ -58,10 +80,10 @@ export class AuthController {
   @ApiDocumentEndpoint({
     summary: 'Log in',
     description:
-      'Authenticates credentials and returns an access token and refresh token.',
+      'Authenticates credentials and returns the current role permissions from the database with an access token and refresh token. Permissions are for frontend UI rendering; backend authorization continues to check current database permissions.',
     successStatus: 201,
     errors: [400, 401, 500],
-    successExample: AUTH_SESSION_EXAMPLE,
+    successExample: AUTH_LOGIN_EXAMPLE,
   })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
@@ -99,12 +121,10 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiDocumentEndpoint({
     summary: 'Get current user',
-    description: 'Returns the profile for the authenticated JWT subject.',
-    errors: [401, 404, 500],
-    successExample: {
-      ...AUTH_USER_EXAMPLE,
-      isActive: true,
-    },
+    description:
+      'Returns the current profile and latest database-backed permission codes for the authenticated JWT subject. JWT role and permission claims are not used as the source of authorization.',
+    errors: [401, 500],
+    successExample: AUTH_PROFILE_EXAMPLE,
   })
   me(@CurrentUser('sub') userId: string) {
     return this.authService.getProfile(userId);

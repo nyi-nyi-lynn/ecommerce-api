@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
 import {
   IsNotEmpty,
   IsNumber,
@@ -10,45 +9,20 @@ import {
   MaxLength,
   Min,
   ValidateBy,
+  ValidateIf,
   type ValidationArguments,
 } from 'class-validator';
+import {
+  TransformNullableString,
+  TransformOptionalNumber,
+  TransformTrimmedString,
+  TransformUpdateNullableNumber,
+  TransformUpdateNullableUuid,
+  transformNullableNumber,
+  transformNullableString,
+} from '../../common/transformers/dto-transforms.util.js';
 
-export function transformNullableString(value: unknown): unknown {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed === '' || trimmed.toLowerCase() === 'null') {
-      return null;
-    }
-    return trimmed;
-  }
-  return value;
-}
-
-export function transformNullableNumber(value: unknown): unknown {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value === 'number') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (trimmed === '' || trimmed.toLowerCase() === 'null') {
-      return null;
-    }
-    return Number(trimmed);
-  }
-  return value;
-}
+export { transformNullableNumber, transformNullableString };
 
 export function IsGreaterThanPrice(): PropertyDecorator {
   return ValidateBy({
@@ -82,19 +56,23 @@ export class CreateProductDto {
     example: 'Wireless Headphones',
     maxLength: 200,
   })
+  @TransformTrimmedString()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   name: string;
+
   @ApiProperty({
     description: 'Unique URL slug.',
     example: 'wireless-headphones',
     maxLength: 220,
   })
+  @TransformTrimmedString()
   @IsString()
   @IsNotEmpty()
   @MaxLength(220)
   slug: string;
+
   @ApiPropertyOptional({
     description: 'Optional active brand UUID.',
     type: String,
@@ -102,27 +80,34 @@ export class CreateProductDto {
     nullable: true,
     example: '33333333-3333-4333-8333-333333333333',
   })
-  @Transform(({ value }) => transformNullableString(value))
+  @TransformUpdateNullableUuid()
   @IsOptional()
   @IsUUID()
   brandId?: string | null;
+
   @ApiProperty({
     description: 'Unique stock keeping unit.',
     example: 'WH-1000',
     maxLength: 100,
   })
+  @TransformTrimmedString()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   sku: string;
+
   @ApiPropertyOptional({
     description: 'Optional product description.',
+    type: String,
+    nullable: true,
     example: 'Over-ear wireless headphones.',
   })
-  @IsString()
+  @TransformNullableString()
   @IsOptional()
-  description?: string;
-  @Type(() => Number)
+  @IsString()
+  description?: string | null;
+
+  @TransformOptionalNumber()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   @ApiProperty({
@@ -132,7 +117,8 @@ export class CreateProductDto {
     minimum: 0.01,
   })
   price: number;
-  @Transform(({ value }) => transformNullableNumber(value))
+
+  @TransformUpdateNullableNumber()
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
@@ -146,15 +132,19 @@ export class CreateProductDto {
     minimum: 0.01,
   })
   originalPrice?: number | null;
+
   @ApiProperty({
     description: 'Existing category UUID.',
     type: String,
     format: 'uuid',
     example: '11111111-1111-4111-8111-111111111111',
   })
+  @TransformTrimmedString()
   @IsUUID()
   categoryId: string;
-  @IsOptional()
+
+  @ValidateIf((_, value) => value !== undefined)
+  @TransformTrimmedString()
   @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
   @MaxLength(2048)
   @ApiPropertyOptional({

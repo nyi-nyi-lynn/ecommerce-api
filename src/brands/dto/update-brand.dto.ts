@@ -1,52 +1,6 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
-import { TransformBoolean } from '../../common/transformers/transform-boolean.decorator.js';
+import { PartialType } from '@nestjs/swagger';
+import { CreateBrandDto } from './create-brand.dto.js';
 
-export class UpdateBrandDto {
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(150)
-  @ApiPropertyOptional({
-    description: 'Brand display name.',
-    example: 'Samsung',
-    maxLength: 150,
-  })
-  name?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(160)
-  @ApiPropertyOptional({
-    description: 'Unique brand URL slug.',
-    example: 'samsung',
-    maxLength: 160,
-  })
-  slug?: string;
-
-  @IsOptional()
-  @IsString()
-  @ApiPropertyOptional({
-    description: 'Optional descriptive text.',
-    type: String,
-    example: 'Global electronics and mobile manufacturer.',
-  })
-  description?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  @TransformBoolean()
-  @ApiPropertyOptional({
-    description: 'Whether the resource is active.',
-    type: Boolean,
-    example: true,
-  })
-  isActive?: boolean;
-}
+export class UpdateBrandDto extends PartialType(CreateBrandDto, {
+  skipNullProperties: false,
+}) {}

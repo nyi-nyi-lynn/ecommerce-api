@@ -711,7 +711,7 @@ describe('ProductsService', () => {
 
     // Clear description by setting description to null without touching omitted fields
     const clearedDescription = await service.update(PRODUCT_ID, {
-      description: null as unknown as string,
+      description: null,
     });
     expect(prisma.product.update).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -720,6 +720,18 @@ describe('ProductsService', () => {
       }),
     );
     expect(clearedDescription.description).toBeNull();
+
+    // Update description with a new value
+    const updatedDescription = await service.update(PRODUCT_ID, {
+      description: '  Updated product description  ',
+    });
+    expect(prisma.product.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { id: PRODUCT_ID },
+        data: { description: 'Updated product description' },
+      }),
+    );
+    expect(updatedDescription.description).toBe('Updated product description');
 
     // Update only name and verify Prisma data contains only name
     await service.update(PRODUCT_ID, { name: '  Only Name Updated  ' });

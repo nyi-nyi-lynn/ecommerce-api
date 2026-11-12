@@ -16,6 +16,7 @@ export const CATEGORY_IMAGE_FOLDER = 'ecommerce/categories';
 export const BRAND_IMAGE_FOLDER = 'ecommerce/brands';
 export const PAYMENT_IMAGE_FOLDER = 'ecommerce/payments';
 export const PAYMENT_PROOF_IMAGE_FOLDER = PAYMENT_IMAGE_FOLDER;
+export const CMS_IMAGE_FOLDER = 'ecommerce/cms';
 export const MAX_PRODUCT_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export type ProductImageAsset = Pick<
@@ -97,6 +98,28 @@ export class UploadsService {
 
   isOwnedBrandAsset(publicId: string) {
     return this.isOwnedAsset(publicId, BRAND_IMAGE_FOLDER);
+  }
+
+  async uploadCmsImage(file: Express.Multer.File | undefined, userId: string) {
+    const normalizedUserId = userId?.trim();
+    if (!normalizedUserId) {
+      throw new BadRequestException(
+        'User ID is required for CMS image upload.',
+      );
+    }
+    return this.uploadImage(
+      file,
+      `${CMS_IMAGE_FOLDER}/users/${normalizedUserId}`,
+      'CMS',
+    );
+  }
+
+  async deleteCmsImage(publicId: string) {
+    return this.deleteOwnedImage(publicId, CMS_IMAGE_FOLDER, 'CMS');
+  }
+
+  isOwnedCmsAsset(publicId: string) {
+    return this.isOwnedAsset(publicId, CMS_IMAGE_FOLDER);
   }
 
   async uploadPaymentProofImage(

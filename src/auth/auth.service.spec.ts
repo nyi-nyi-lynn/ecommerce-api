@@ -18,9 +18,13 @@ describe('AuthService refresh sessions', () => {
     phone: null,
     passwordHash: '$2b$12$hash',
     roleId,
-    role: { name: 'CUSTOMER' },
+    role: {
+      name: 'CUSTOMER',
+      permissions: [{ permission: { code: 'order:read' } }],
+    },
     isActive: true,
     createdAt: new Date('2025-01-01T00:00:00Z'),
+    updatedAt: new Date('2025-01-02T00:00:00Z'),
   };
   let service: AuthService;
   let prisma: any;
@@ -109,6 +113,130 @@ describe('AuthService refresh sessions', () => {
     expect(stored).toHaveLength(2);
     expect(stored[0].familyId).not.toBe(stored[1].familyId);
     expect(first.refreshToken).not.toBe(second.refreshToken);
+  });
+
+  it('returns current role permission codes on login without exposing the password hash', async () => {
+    const result = await service.login({
+      email: user.email,
+      password: 'password123',
+    });
+
+    expect(result).toMatchObject({
+      user: {
+        id: user.id,
+        roleId,
+        role: 'CUSTOMER',
+        isActive: true,
+      },
+      permissions: ['order:read'],
+      accessToken: 'access.jwt',
+    });
+    expect(result.user).not.toHaveProperty('passwordHash');
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { email: user.email },
+      include: {
+        role: {
+          select: {
+            name: true,
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('returns an empty permission list for a role with no assignments', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      ...user,
+      role: { name: 'CUSTOMER', permissions: [] },
+    });
+
+    const result = await service.login({
+      email: user.email,
+      password: 'password123',
+    });
+
+    expect(result.permissions).toEqual([]);
+  });
+
+  it('returns latest profile permissions from the database and excludes sensitive fields', async () => {
+    const profileRow = (codes: string[]) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        roleId: user.roleId,
+        isActive: true,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        role: {
+          name: 'CUSTOMER',
+          permissions: codes.map((code) => ({ permission: { code } })),
+        },
+      });
+    prisma.user.findUnique
+      .mockResolvedValueOnce(profileRow(['order:read']))
+      .mockResolvedValueOnce(profileRow(['product:read', 'cart:read']));
+
+    await service.getProfile(user.id);
+    const result = await service.getProfile(user.id);
+
+    expect(result).toEqual({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: null,
+        roleId,
+        isActive: true,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        role: 'CUSTOMER',
+      },
+      permissions: ['cart:read', 'product:read'],
+    });
+    expect(JSON.stringify(result)).not.toContain('passwordHash');
+    expect(JSON.stringify(result)).not.toContain('tokenHash');
+    expect(prisma.user.findUnique).toHaveBeenLastCalledWith({
+      where: { id: user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        roleId: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        role: {
+          select: {
+            name: true,
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('rejects missing and inactive users from the current-profile endpoint', async () => {
+    prisma.user.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: user.id,
+        isActive: false,
+        role: { name: 'CUSTOMER', permissions: [] },
+      });
+
+    await expect(service.getProfile(user.id)).rejects.toThrow(
+      new UnauthorizedException('User not found'),
+    );
+    await expect(service.getProfile(user.id)).rejects.toThrow(
+      new UnauthorizedException('Account is Disabled'),
+    );
   });
 
   it('rotates a valid refresh token and rejects reuse', async () => {
