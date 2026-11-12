@@ -67,7 +67,16 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: { role: { select: { name: true } } },
+      include: {
+        role: {
+          select: {
+            name: true,
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
+      },
     });
 
     if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
@@ -85,6 +94,7 @@ export class AuthService {
     const { passwordHash: _, role, ...safeUser } = user;
     return {
       user: { ...safeUser, role: role.name },
+      permissions: this.permissionCodes(role),
       ...tokens,
     };
   }
@@ -256,16 +266,39 @@ export class AuthService {
         name: true,
         email: true,
         phone: true,
-        role: { select: { name: true } },
+        roleId: true,
         isActive: true,
         createdAt: true,
+        updatedAt: true,
+        role: {
+          select: {
+            name: true,
+            permissions: {
+              select: { permission: { select: { code: true } } },
+            },
+          },
+        },
       },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException(
+        user ? 'Account is Disabled' : 'User not found',
+      );
     }
 
-    return { ...user, role: user.role.name };
+    const { role, ...safeUser } = user;
+    return {
+      user: { ...safeUser, role: role.name },
+      permissions: this.permissionCodes(role),
+    };
+  }
+
+  private permissionCodes(role: {
+    permissions?: Array<{ permission: { code: string } }>;
+  }): string[] {
+    return (role.permissions ?? [])
+      .map(({ permission }) => permission.code)
+      .sort((a, b) => a.localeCompare(b));
   }
 }
