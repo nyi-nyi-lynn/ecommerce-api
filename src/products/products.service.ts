@@ -489,9 +489,7 @@ export class ProductsService {
       );
     }
     if (!brand.isActive) {
-      throw new UnprocessableEntityException(
-        'The selected brand is inactive.',
-      );
+      throw new UnprocessableEntityException('The selected brand is inactive.');
     }
   }
 

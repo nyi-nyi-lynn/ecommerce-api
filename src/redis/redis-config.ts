@@ -59,12 +59,7 @@ export function validateRedisEnvironment(env: Record<string, unknown>) {
   }
   const dbString = typeof rawDb === 'number' ? String(rawDb) : rawDb.trim();
   const db = typeof rawDb === 'number' ? rawDb : Number(dbString);
-  if (
-    dbString === '' ||
-    !Number.isInteger(db) ||
-    db < 0 ||
-    db > MAX_REDIS_DB
-  ) {
+  if (dbString === '' || !Number.isInteger(db) || db < 0 || db > MAX_REDIS_DB) {
     throw new Error(
       `REDIS_DB must be an integer between 0 and ${MAX_REDIS_DB}`,
     );
@@ -110,4 +105,3 @@ export function buildRedisOptions(config: ConfigService): RedisOptions {
     enableOfflineQueue: false,
   };
 }
-

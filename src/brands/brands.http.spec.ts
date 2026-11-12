@@ -55,9 +55,7 @@ describe('Brands HTTP', () => {
       brand: {
         create: vi.fn(async ({ data }) => {
           if (
-            rows.some(
-              (row) => row.name === data.name || row.slug === data.slug,
-            )
+            rows.some((row) => row.name === data.name || row.slug === data.slug)
           ) {
             throw { code: 'P2002' };
           }
@@ -96,8 +94,7 @@ describe('Brands HTTP', () => {
         findFirst: vi.fn(
           async ({ where }) =>
             rows.find(
-              (row) =>
-                row.id === where.id && row.isActive === where.isActive,
+              (row) => row.id === where.id && row.isActive === where.isActive,
             ) ?? null,
         ),
         findUnique: vi.fn(

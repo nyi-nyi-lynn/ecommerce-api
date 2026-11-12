@@ -69,4 +69,3 @@ describe('OrderPaymentStatus and PaymentStatus type separation', () => {
     expect(attemptCreate.status).toBe(PaymentStatus.UNDER_REVIEW);
   });
 });
-

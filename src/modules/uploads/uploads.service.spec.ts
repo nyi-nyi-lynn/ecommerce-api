@@ -178,12 +178,12 @@ describe('UploadsService', () => {
       'ecommerce/products/../categories/image',
       `ecommerce/categories/users/${USER_ID}/../../products/image`,
     ]) {
-      await expect(
-        service.deleteProductImage(invalidPublicId),
-      ).resolves.toBe(false);
-      await expect(
-        service.deleteCategoryImage(invalidPublicId),
-      ).resolves.toBe(false);
+      await expect(service.deleteProductImage(invalidPublicId)).resolves.toBe(
+        false,
+      );
+      await expect(service.deleteCategoryImage(invalidPublicId)).resolves.toBe(
+        false,
+      );
     }
     expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
   });
@@ -293,10 +293,12 @@ describe('UploadsService', () => {
       }),
     );
     const image = imageFile();
-    await expect(service.uploadCmsImage(image, USER_ID)).resolves.toMatchObject({
-      secure_url: 'https://res.cloudinary.com/demo/image/upload/cms.jpg',
-      public_id: `ecommerce/cms/users/${USER_ID}/cms`,
-    });
+    await expect(service.uploadCmsImage(image, USER_ID)).resolves.toMatchObject(
+      {
+        secure_url: 'https://res.cloudinary.com/demo/image/upload/cms.jpg',
+        public_id: `ecommerce/cms/users/${USER_ID}/cms`,
+      },
+    );
     expect(cloudinary.uploader.upload_stream).toHaveBeenCalledWith(
       expect.objectContaining({
         folder: `ecommerce/cms/users/${USER_ID}`,
@@ -308,7 +310,9 @@ describe('UploadsService', () => {
       service.deleteCmsImage(`ecommerce/cms/users/${USER_ID}/cms`),
     ).resolves.toBe(true);
     await expect(
-      service.deleteCmsImage(`ecommerce/products/users/${USER_ID}/wrong-folder`),
+      service.deleteCmsImage(
+        `ecommerce/products/users/${USER_ID}/wrong-folder`,
+      ),
     ).resolves.toBe(false);
   });
 

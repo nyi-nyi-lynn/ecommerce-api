@@ -38,4 +38,3 @@ export class PaginationQueryDto {
   })
   limit?: number = 20;
 }
-

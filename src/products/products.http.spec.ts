@@ -184,9 +184,7 @@ describe('Products HTTP', () => {
             ...(data.price !== undefined && { price: String(data.price) }),
             ...(data.originalPrice !== undefined && {
               originalPrice:
-                data.originalPrice !== null
-                  ? String(data.originalPrice)
-                  : null,
+                data.originalPrice !== null ? String(data.originalPrice) : null,
             }),
           };
           rows = rows.map((item) => (item.id === where.id ? row : item));
@@ -568,7 +566,9 @@ describe('Products HTTP', () => {
       imageUrl: null,
     });
     expect(filteredNonDiscounted.body.data.items[0].brand).toBeNull();
-    expect(filteredNonDiscounted.body.data.items[0].discountPercentage).toBeNull();
+    expect(
+      filteredNonDiscounted.body.data.items[0].discountPercentage,
+    ).toBeNull();
 
     // Reject update when new price >= existing originalPrice (150000)
     await request(app.getHttpServer())

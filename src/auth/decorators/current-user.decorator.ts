@@ -17,4 +17,3 @@ export const CurrentUser = createParamDecorator(
   (field: keyof JwtPayload | undefined, context: ExecutionContext) =>
     extractCurrentUser(field, context),
 );
-

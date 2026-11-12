@@ -19,10 +19,7 @@ import { RedisThrottlerStorage } from './redis-throttler.storage.js';
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [RedisThrottlerStorage, ConfigService],
-      useFactory: (
-        storage: RedisThrottlerStorage,
-        config: ConfigService,
-      ) => ({
+      useFactory: (storage: RedisThrottlerStorage, config: ConfigService) => ({
         errorMessage: DEFAULT_RATE_LIMIT_ERROR_MESSAGE,
         storage,
         throttlers: [

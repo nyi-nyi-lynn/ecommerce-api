@@ -268,9 +268,9 @@ describe('Redis Integration (Phase 2)', () => {
         new Error(`ERR Lua script failed: AUTH ${SECRET_PASSWORD}`),
       );
 
-      await expect(
-        service.eval('invalid', ['rl:key:1'], []),
-      ).rejects.toThrow('ERR Lua script failed: AUTH [REDACTED]');
+      await expect(service.eval('invalid', ['rl:key:1'], [])).rejects.toThrow(
+        'ERR Lua script failed: AUTH [REDACTED]',
+      );
       expect(String(errorSpy.mock.calls[0]?.[0])).not.toContain(
         SECRET_PASSWORD,
       );
@@ -404,4 +404,3 @@ describe('Redis Integration (Phase 2)', () => {
     });
   });
 });
-

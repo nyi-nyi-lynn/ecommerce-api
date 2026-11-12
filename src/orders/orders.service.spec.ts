@@ -601,7 +601,11 @@ describe('OrdersService', () => {
       ConflictException,
     );
     await expect(
-      service.updateStatus(ORDER_1, { status: OrderStatus.DELIVERED } as any, U2),
+      service.updateStatus(
+        ORDER_1,
+        { status: OrderStatus.DELIVERED } as any,
+        U2,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(stock.restoreForOrder).toHaveBeenCalledOnce();
   });

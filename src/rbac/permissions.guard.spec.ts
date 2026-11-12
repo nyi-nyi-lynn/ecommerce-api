@@ -46,9 +46,9 @@ describe('PermissionsGuard', () => {
         ],
       },
     });
-    await expect(
-      guard.canActivate(makeContext({ sub: userId })),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(makeContext({ sub: userId }))).resolves.toBe(
+      true,
+    );
   });
 
   it('denies when the database role lacks any required permission', async () => {
@@ -76,9 +76,9 @@ describe('PermissionsGuard', () => {
     await expect(
       guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(
-      guard.canActivate(makeContext({ sub: userId })),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(makeContext({ sub: userId }))).resolves.toBe(
+      true,
+    );
   });
 
   it('returns 401 for a missing identity and denies deleted or inactive users', async () => {

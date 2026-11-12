@@ -79,11 +79,7 @@ describe('BrandsService', () => {
     });
     const image = { buffer: Buffer.from('image') } as Express.Multer.File;
 
-    await service.create(
-      { name: 'Samsung', slug: 'samsung' },
-      image,
-      USER_ID,
-    );
+    await service.create({ name: 'Samsung', slug: 'samsung' }, image, USER_ID);
 
     expect(uploads.uploadBrandImage).toHaveBeenCalledWith(image, USER_ID);
     expect(prisma.brand.create).toHaveBeenCalledWith(
@@ -150,7 +146,9 @@ describe('BrandsService', () => {
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
     expect(result).toEqual({
-      items: [{ id: BRAND_ID, name: 'Samsung', slug: 'samsung', isActive: true }],
+      items: [
+        { id: BRAND_ID, name: 'Samsung', slug: 'samsung', isActive: true },
+      ],
       pagination: { page: 2, limit: 10, total: 1, totalPages: 1 },
     });
   });

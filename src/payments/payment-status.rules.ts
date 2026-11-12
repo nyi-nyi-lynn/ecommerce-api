@@ -49,5 +49,3 @@ export function orderPaymentStatusAfterCancel(
     ? ORDER_PAYMENT_STATUS.CANCELLED
     : current;
 }
-
-

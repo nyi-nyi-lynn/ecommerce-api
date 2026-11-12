@@ -13,4 +13,3 @@ export function transformBooleanValue(value: unknown): unknown {
 export function TransformBoolean(): PropertyDecorator {
   return Transform(({ value }) => transformBooleanValue(value));
 }
-

@@ -35,7 +35,9 @@ export function TransformCmsNullableString(): PropertyDecorator {
   });
 }
 
-export function isCmsJsonObject(value: unknown): value is Record<string, unknown> {
+export function isCmsJsonObject(
+  value: unknown,
+): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const seen = new WeakSet<object>();
   let nodes = 0;
@@ -46,12 +48,17 @@ export function isCmsJsonObject(value: unknown): value is Record<string, unknown
       entry === null ||
       typeof entry === 'string' ||
       typeof entry === 'boolean'
-    ) return true;
+    )
+      return true;
     if (typeof entry === 'number') return Number.isFinite(entry);
     if (typeof entry !== 'object') return false;
     if (seen.has(entry)) return false;
     const prototype = Object.getPrototypeOf(entry);
-    if (!Array.isArray(entry) && prototype !== Object.prototype && prototype !== null) {
+    if (
+      !Array.isArray(entry) &&
+      prototype !== Object.prototype &&
+      prototype !== null
+    ) {
       return false;
     }
     seen.add(entry);

@@ -43,4 +43,3 @@ export async function createTestHttpApp(
   await app.init();
   return app;
 }
-

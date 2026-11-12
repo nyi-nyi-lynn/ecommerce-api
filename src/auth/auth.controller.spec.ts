@@ -101,7 +101,12 @@ describe('JwtAuthGuard', () => {
   });
 
   it('rejects a malformed UUID subject with 401 Unauthorized', async () => {
-    for (const invalidSub of ['42', 'not-a-uuid', '', '00000000-0000-0000-0000-00000000000g']) {
+    for (const invalidSub of [
+      '42',
+      'not-a-uuid',
+      '',
+      '00000000-0000-0000-0000-00000000000g',
+    ]) {
       const token = await jwtService.signAsync({
         sub: invalidSub,
         email: 'malformed@example.test',
@@ -117,7 +122,12 @@ describe('JwtAuthGuard', () => {
   });
 
   it('rejects non-string subjects with 401 Unauthorized', async () => {
-    for (const nonStringSub of [null, true, { id: VALID_USER_UUID }, [VALID_USER_UUID]]) {
+    for (const nonStringSub of [
+      null,
+      true,
+      { id: VALID_USER_UUID },
+      [VALID_USER_UUID],
+    ]) {
       const token = await jwtService.signAsync({
         sub: nonStringSub,
         email: 'non-string@example.test',

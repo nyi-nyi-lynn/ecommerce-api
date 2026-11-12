@@ -6,4 +6,3 @@ export function hasPrismaErrorCode(error: unknown, code: string): boolean {
     (error as { code?: unknown }).code === code
   );
 }
-

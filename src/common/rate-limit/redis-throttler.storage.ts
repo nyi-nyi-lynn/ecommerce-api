@@ -152,10 +152,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
 
     const timeToExpire = Math.max(1, Math.ceil((hitTtlMs || ttl) / 1000));
     const timeToBlockExpire = isBlocked
-      ? Math.max(
-          1,
-          Math.ceil((blockTtlMs || effectiveBlockDurationMs) / 1000),
-        )
+      ? Math.max(1, Math.ceil((blockTtlMs || effectiveBlockDurationMs) / 1000))
       : 0;
 
     return {

@@ -22,7 +22,11 @@ describe('RbacService', () => {
   let service: RbacService;
   let prisma: any;
   let roles: Array<{ id: string; name: string; description: string | null }>;
-  let permissions: Array<{ id: string; code: string; description: string | null }>;
+  let permissions: Array<{
+    id: string;
+    code: string;
+    description: string | null;
+  }>;
   let rolePermissions: Array<{ roleId: string; permissionId: string }>;
   let users: Array<{ id: string; roleId: string; isActive: boolean }>;
   let lockedRoleOrders: string[][];
@@ -32,11 +36,19 @@ describe('RbacService', () => {
     roles = [
       { id: ROLE_ADMIN, name: 'ADMIN', description: 'Admin role' },
       { id: ROLE_CUSTOMER, name: 'CUSTOMER', description: 'Customer role' },
-      { id: ROLE_CO_ADMIN, name: 'CO_ADMIN', description: 'Secondary manager role' },
+      {
+        id: ROLE_CO_ADMIN,
+        name: 'CO_ADMIN',
+        description: 'Secondary manager role',
+      },
     ];
     permissions = [
       { id: PERM_MANAGE, code: 'role:manage', description: 'Manage roles' },
-      { id: PERM_PRODUCT_READ, code: 'product:read', description: 'Read products' },
+      {
+        id: PERM_PRODUCT_READ,
+        code: 'product:read',
+        description: 'Read products',
+      },
     ];
     rolePermissions = [{ roleId: ROLE_ADMIN, permissionId: PERM_MANAGE }];
     users = [{ id: USER_ACTIVE_ADMIN, roleId: ROLE_ADMIN, isActive: true }];
@@ -175,16 +187,24 @@ describe('RbacService', () => {
           );
 
           return users.filter((u) => {
-            if (where?.isActive !== undefined && u.isActive !== where.isActive) {
+            if (
+              where?.isActive !== undefined &&
+              u.isActive !== where.isActive
+            ) {
               return false;
             }
             if (where?.id?.not !== undefined && u.id === where.id.not) {
               return false;
             }
-            if (where?.roleId?.not !== undefined && u.roleId === where.roleId.not) {
+            if (
+              where?.roleId?.not !== undefined &&
+              u.roleId === where.roleId.not
+            ) {
               return false;
             }
-            if (where?.role?.permissions?.some?.permission?.code === 'role:manage') {
+            if (
+              where?.role?.permissions?.some?.permission?.code === 'role:manage'
+            ) {
               return managerRoleIds.has(u.roleId);
             }
             return true;
@@ -246,7 +266,11 @@ describe('RbacService', () => {
   it('1. does not count an inactive admin as another active manager', async () => {
     // Add an inactive user to CO_ADMIN (which also has role:manage)
     rolePermissions.push({ roleId: ROLE_CO_ADMIN, permissionId: PERM_MANAGE });
-    users.push({ id: USER_INACTIVE_CO_ADMIN, roleId: ROLE_CO_ADMIN, isActive: false });
+    users.push({
+      id: USER_INACTIVE_CO_ADMIN,
+      roleId: ROLE_CO_ADMIN,
+      isActive: false,
+    });
 
     // Removing role:manage from role 1 (held by active user 100) must fail
     // because user 101 is inactive.
@@ -258,7 +282,11 @@ describe('RbacService', () => {
 
     // Self-demoting active user 100 from ADMIN (1) to CUSTOMER (2) must also fail
     await expect(
-      service.assignUserRole(USER_ACTIVE_ADMIN, ROLE_CUSTOMER, USER_ACTIVE_ADMIN),
+      service.assignUserRole(
+        USER_ACTIVE_ADMIN,
+        ROLE_CUSTOMER,
+        USER_ACTIVE_ADMIN,
+      ),
     ).rejects.toThrow(
       new ConflictException('Cannot remove the final role management access.'),
     );
@@ -271,7 +299,11 @@ describe('RbacService', () => {
       new ConflictException('Cannot remove the final role management access.'),
     );
     await expect(
-      service.assignUserRole(USER_ACTIVE_ADMIN, ROLE_CUSTOMER, USER_ACTIVE_ADMIN),
+      service.assignUserRole(
+        USER_ACTIVE_ADMIN,
+        ROLE_CUSTOMER,
+        USER_ACTIVE_ADMIN,
+      ),
     ).rejects.toThrow(
       new ConflictException('Cannot remove the final role management access.'),
     );
@@ -279,7 +311,11 @@ describe('RbacService', () => {
 
   it('3. allows a permitted change when another active manager exists', async () => {
     rolePermissions.push({ roleId: ROLE_CO_ADMIN, permissionId: PERM_MANAGE });
-    users.push({ id: USER_ACTIVE_CO_ADMIN, roleId: ROLE_CO_ADMIN, isActive: true });
+    users.push({
+      id: USER_ACTIVE_CO_ADMIN,
+      roleId: ROLE_CO_ADMIN,
+      isActive: true,
+    });
 
     // Role 1 can drop role:manage because active user 102 on Role 3 still has role:manage
     const updatedRole = await service.setPermissions(ROLE_ADMIN, [
@@ -301,7 +337,11 @@ describe('RbacService', () => {
 
   it('4. prevents two concurrent changes from removing the last active manager and locks roles in ascending ID order', async () => {
     rolePermissions.push({ roleId: ROLE_CO_ADMIN, permissionId: PERM_MANAGE });
-    users.push({ id: USER_ACTIVE_CO_ADMIN, roleId: ROLE_CO_ADMIN, isActive: true });
+    users.push({
+      id: USER_ACTIVE_CO_ADMIN,
+      roleId: ROLE_CO_ADMIN,
+      isActive: true,
+    });
 
     // Concurrent attempts to strip role:manage from Role 3 and Role 1 simultaneously
     const results = await Promise.allSettled([
@@ -322,7 +362,9 @@ describe('RbacService', () => {
       isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
     });
     for (const lockOrder of lockedRoleOrders) {
-      expect(lockOrder).toEqual([...lockOrder].sort((a, b) => a.localeCompare(b)));
+      expect(lockOrder).toEqual(
+        [...lockOrder].sort((a, b) => a.localeCompare(b)),
+      );
     }
   });
 
@@ -407,8 +449,11 @@ describe('RbacService', () => {
       service.assignUserRole(USER_MISSING, ROLE_ADMIN, USER_ACTIVE_ADMIN),
     ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
-      service.assignUserRole(USER_ACTIVE_ADMIN, ROLE_MISSING, USER_ACTIVE_ADMIN),
+      service.assignUserRole(
+        USER_ACTIVE_ADMIN,
+        ROLE_MISSING,
+        USER_ACTIVE_ADMIN,
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
-

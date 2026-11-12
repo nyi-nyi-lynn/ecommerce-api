@@ -605,8 +605,7 @@ describe('Device-Based Rate Limiting HTTP Integration', () => {
           .set('X-Forwarded-For', '1.2.3.4')
           .expect(200);
 
-        const directMetadata =
-          redisSimulator.getDeviceMetadata(directDeviceId);
+        const directMetadata = redisSimulator.getDeviceMetadata(directDeviceId);
         expect(directMetadata?.fields.ipAddress).toBe('127.0.0.1');
       } finally {
         await untrustedProxyApp.close();

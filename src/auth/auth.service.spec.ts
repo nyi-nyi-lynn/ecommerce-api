@@ -163,19 +163,19 @@ describe('AuthService refresh sessions', () => {
 
   it('returns latest profile permissions from the database and excludes sensitive fields', async () => {
     const profileRow = (codes: string[]) => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        roleId: user.roleId,
-        isActive: true,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-        role: {
-          name: 'CUSTOMER',
-          permissions: codes.map((code) => ({ permission: { code } })),
-        },
-      });
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      roleId: user.roleId,
+      isActive: true,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      role: {
+        name: 'CUSTOMER',
+        permissions: codes.map((code) => ({ permission: { code } })),
+      },
+    });
     prisma.user.findUnique
       .mockResolvedValueOnce(profileRow(['order:read']))
       .mockResolvedValueOnce(profileRow(['product:read', 'cart:read']));
@@ -223,13 +223,11 @@ describe('AuthService refresh sessions', () => {
   });
 
   it('rejects missing and inactive users from the current-profile endpoint', async () => {
-    prisma.user.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
-        id: user.id,
-        isActive: false,
-        role: { name: 'CUSTOMER', permissions: [] },
-      });
+    prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: user.id,
+      isActive: false,
+      role: { name: 'CUSTOMER', permissions: [] },
+    });
 
     await expect(service.getProfile(user.id)).rejects.toThrow(
       new UnauthorizedException('User not found'),

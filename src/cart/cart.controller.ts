@@ -79,10 +79,7 @@ export class CartController {
       ],
     },
   })
-  addItem(
-    @CurrentUser('sub') userId: string,
-    @Body() dto: AddCartItemDto,
-  ) {
+  addItem(@CurrentUser('sub') userId: string, @Body() dto: AddCartItemDto) {
     return this.cart.addItem(userId, dto);
   }
 

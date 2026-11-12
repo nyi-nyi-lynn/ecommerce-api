@@ -89,7 +89,7 @@ describe('ProductsService', () => {
           ...data,
           brandId: data.brand?.disconnect
             ? null
-            : data.brand?.connect?.id ?? null,
+            : (data.brand?.connect?.id ?? null),
           brand: data.brand?.disconnect
             ? null
             : data.brand?.connect?.id
@@ -178,7 +178,12 @@ describe('ProductsService', () => {
       return null;
     });
 
-    await service.update(PRODUCT_ID, { name: 'Updated Mouse' }, mockFile, USER_ID);
+    await service.update(
+      PRODUCT_ID,
+      { name: 'Updated Mouse' },
+      mockFile,
+      USER_ID,
+    );
 
     expect(uploads.uploadProductImage).toHaveBeenCalledWith(mockFile, USER_ID);
     expect(uploads.deleteProductImage).toHaveBeenCalledWith(
@@ -208,7 +213,9 @@ describe('ProductsService', () => {
       service.findAll({ minPrice: 100, maxPrice: 50 }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
 
-    prisma.product.findMany.mockResolvedValueOnce([{ id: PRODUCT_ID, name: 'Mouse' }]);
+    prisma.product.findMany.mockResolvedValueOnce([
+      { id: PRODUCT_ID, name: 'Mouse' },
+    ]);
     prisma.product.count.mockResolvedValueOnce(1);
 
     const result = await service.findAll({ page: 2, limit: 5 });
@@ -627,7 +634,7 @@ describe('ProductsService', () => {
       ...data,
       brandId: data.brand?.disconnect
         ? null
-        : data.brand?.connect?.id ?? BRAND_ID,
+        : (data.brand?.connect?.id ?? BRAND_ID),
       brand: data.brand?.disconnect
         ? null
         : {
@@ -799,4 +806,3 @@ describe('ProductsService', () => {
     );
   });
 });
-

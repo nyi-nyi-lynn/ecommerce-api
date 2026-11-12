@@ -175,7 +175,8 @@ export class RbacService {
               id: { not: target.id },
               role: {
                 permissions: {
-                  some: { permission: { code: 'role:manage' } } },
+                  some: { permission: { code: 'role:manage' } },
+                },
               },
             },
           });

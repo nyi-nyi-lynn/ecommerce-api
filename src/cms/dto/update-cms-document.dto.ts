@@ -1,6 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
-import { TransformNullableString, TransformTrimmedString } from '../../common/transformers/dto-transforms.util.js';
+import {
+  TransformNullableString,
+  TransformTrimmedString,
+} from '../../common/transformers/dto-transforms.util.js';
 
 export class UpdateCmsDocumentDto {
   @TransformTrimmedString()

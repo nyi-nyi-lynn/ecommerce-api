@@ -35,7 +35,11 @@ export class CreateCmsSectionDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(80)
-  @ApiProperty({ description: 'Frontend section component type.', example: 'hero', maxLength: 80 })
+  @ApiProperty({
+    description: 'Frontend section component type.',
+    example: 'hero',
+    maxLength: 80,
+  })
   type!: string;
 
   @TransformOptionalNumber()

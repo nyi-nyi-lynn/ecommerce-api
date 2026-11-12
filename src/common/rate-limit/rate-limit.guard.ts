@@ -199,14 +199,8 @@ export class RateLimitGuard extends ThrottlerGuard {
   protected override async handleRequest(
     requestProps: ThrottlerRequest,
   ): Promise<boolean> {
-    const {
-      context,
-      limit,
-      ttl,
-      throttler,
-      blockDuration,
-      generateKey,
-    } = requestProps;
+    const { context, limit, ttl, throttler, blockDuration, generateKey } =
+      requestProps;
     const { req, res } = this.getRequestResponse(context);
     const request = req as RateLimitRequest;
 
@@ -230,15 +224,16 @@ export class RateLimitGuard extends ThrottlerGuard {
         ? blockDuration
         : DEFAULT_RATE_LIMIT_BLOCK_DURATION_MS;
 
-    const { totalHits, timeToExpire, isBlocked, timeToBlockExpire } =
-      await (this.storageService as RedisThrottlerStorage).increment(
-        key,
-        ttl,
-        limit,
-        effectiveBlockDuration,
-        throttlerName,
-        ipAddress,
-      );
+    const { totalHits, timeToExpire, isBlocked, timeToBlockExpire } = await (
+      this.storageService as RedisThrottlerStorage
+    ).increment(
+      key,
+      ttl,
+      limit,
+      effectiveBlockDuration,
+      throttlerName,
+      ipAddress,
+    );
 
     const getThrottlerSuffix = (name: string) =>
       name === 'default' ? '' : `-${name}`;

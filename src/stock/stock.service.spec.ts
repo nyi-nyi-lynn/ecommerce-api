@@ -186,7 +186,11 @@ describe('StockService', () => {
   it('rejects insufficient stock and rolls back quantity if movement insertion fails', async () => {
     quantity = 3;
     await expect(
-      service.adjust(PRODUCT_ID, { quantityChange: -4, reason: 'SALE' }, ACTOR_ID),
+      service.adjust(
+        PRODUCT_ID,
+        { quantityChange: -4, reason: 'SALE' },
+        ACTOR_ID,
+      ),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(quantity).toBe(3);
     expect(movements).toHaveLength(0);

@@ -265,7 +265,7 @@ describe('RedisThrottlerStorage (Real Redis Integration on 127.0.0.1:6379/db0)',
       await redisClient.del(...Array.from(createdRedisKeys));
       createdRedisKeys.clear();
     }
-    await redisService?. onModuleDestroy();
+    await redisService?.onModuleDestroy();
   });
 
   it('executes RATE_LIMIT_DEVICE_LUA on real Redis and writes metadata Hash, request Sorted Set, and TTLs', async () => {
@@ -390,7 +390,14 @@ describe('RedisThrottlerStorage (Real Redis Integration on 127.0.0.1:6379/db0)',
     const blockedKey = buildDeviceBlockedKey(deviceId);
 
     for (let i = 1; i <= 5; i++) {
-      await storage.increment(deviceId, 60_000, 5, 0, 'default', '192.168.1.10');
+      await storage.increment(
+        deviceId,
+        60_000,
+        5,
+        0,
+        'default',
+        '192.168.1.10',
+      );
     }
 
     // 6th request triggers default 180s block

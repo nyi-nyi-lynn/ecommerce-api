@@ -140,10 +140,7 @@ export class OrdersController {
       pagination: { page: 1, limit: 20, total: 1, totalPages: 1 },
     },
   })
-  listMine(
-    @CurrentUser('sub') userId: string,
-    @Query() query: QueryOrdersDto,
-  ) {
+  listMine(@CurrentUser('sub') userId: string, @Query() query: QueryOrdersDto) {
     return this.orders.listMine(userId, query);
   }
 

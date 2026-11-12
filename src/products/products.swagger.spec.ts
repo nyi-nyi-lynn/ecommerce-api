@@ -311,7 +311,8 @@ describe('Swagger query parameters', () => {
       }
 
       // Check query parameter categoryId on GET /api/products
-      const productQueryParams = document.paths['/api/products']?.get?.parameters ?? [];
+      const productQueryParams =
+        document.paths['/api/products']?.get?.parameters ?? [];
       const categoryIdQuery = productQueryParams.find(
         (p) => !('$ref' in p) && p.in === 'query' && p.name === 'categoryId',
       );
