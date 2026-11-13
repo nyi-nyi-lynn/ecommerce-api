@@ -57,6 +57,79 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Database Seeding (Development Sample Data)
+
+The Prisma 7 seed (`prisma/seed.ts`, executed via `prisma/run-seed.mjs`) populates idempotent, non-destructive sample data for frontend development, UI testing, and API verification.
+
+### 1. How to Execute the Seed
+
+Ensure your `.env` file includes:
+
+```env
+NODE_ENV=development
+SEED_ENV=development
+SEED_DEFAULT_PASSWORD=YourDevPassword123!
+```
+
+*(Note: `SEED_DEFAULT_PASSWORD` must be between 8 and 72 UTF-8 bytes; the seed refuses to run when `NODE_ENV=production` or `SEED_ENV !== 'development'`.)*
+
+Run the seed manually with either command:
+
+```bash
+node prisma/run-seed.mjs
+# or via Prisma 7 CLI:
+npx prisma db seed --config prisma7.config.ts
+```
+
+### 2. Development Login Credentials
+
+All seeded accounts share the password configured in `SEED_DEFAULT_PASSWORD` (hashed with `bcrypt` cost `12`, never stored or logged in plain text):
+
+| Name | Email | Phone | Role | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| Admin User | `admin@example.com` | `+959400100001` | `ADMIN` | Active |
+| Staff One | `staff1@example.com` | `+959400100002` | `STAFF` | Active |
+| Staff Two | `staff2@example.com` | `+959400100003` | `STAFF` | Active |
+| Staff Three | `staff3@example.com` | `+959400100004` | `STAFF` | Active |
+| Aye Aye | `ayeaye@example.com` | `+959400100005` | `CUSTOMER` | Active |
+| Mg Mg | `mgmg@example.com` | `+959400100006` | `CUSTOMER` | Active |
+| Su Su | `susu@example.com` | `+959400100007` | `CUSTOMER` | Active |
+| Aung Htet | `aunghtet@example.com` | `+959400100008` | `CUSTOMER` | Active |
+| May Thiri | `maythiri@example.com` | `+959400100009` | `CUSTOMER` | Active |
+| Ko Min | `komin@example.com` | `+959400100010` | `CUSTOMER` | Active |
+| Thant Zin | `thantzin@example.com` | `+959400100011` | `CUSTOMER` | Active |
+| Hnin Wai | `hninwai@example.com` | `+959400100012` | `CUSTOMER` | Active |
+
+### 3. Seeded Roles & Permissions
+
+- **`ADMIN`** (all 26 permissions): Full access including `role:manage`, `user:manage`, `media:upload`, and all CRUD/review operations across Categories, Brands, Products, Stock, Orders, Payments, and CMS.
+- **`STAFF`** (18 operational permissions): `category:read`, `category:create`, `category:update`, `brand:read`, `brand:create`, `brand:update`, `product:read`, `product:create`, `product:update`, `stock:read`, `stock:update`, `order:read`, `order:update`, `payment:read`, `payment:update`, `payment:collect`, `cms:read`, `cms:create`, `cms:update`, `media:upload` (excludes `role:manage`, `user:manage`, and destructive `*:delete` permissions).
+- **`CUSTOMER`** (3 storefront read permissions): `category:read`, `brand:read`, `product:read`.
+
+### 4. Seeded Record Counts
+
+- **Roles:** 3 (`ADMIN`, `STAFF`, `CUSTOMER`)
+- **Permissions:** 26
+- **Users:** 12 (1 `ADMIN`, 3 `STAFF`, 8 `CUSTOMER`)
+- **Categories:** 15 (Electronics, Fashion, Home & Living, Beauty & Personal Care, Sports & Outdoors)
+- **Brands:** 16 (`Apple`, `Samsung`, `Xiaomi`, `Sony`, `ASUS`, `Lenovo`, `Nike`, `Adidas`, `Logitech`, `Anker`, `Dell`, `LG`, `Canon`, `Nintendo`, `Keychron`, `TP-Link`)
+- **Products:** 44 (41 active, 3 inactive for filter testing; 21 discounted with `originalPrice > price` and 23 regular-price; 36 branded and 8 with `brandId = null`)
+- **Stock & StockMovements:** 44 `Stock` rows and 44 `INITIALIZATION` `StockMovement` rows (includes normal stock, 5 low-stock items with 1–3 units, and 3 out-of-stock items with `quantity = 0`)
+- **Carts:** 5 customer carts (10 cart items)
+- **Orders / Payments:** 0 (no transaction records are seeded)
+
+### 5. Image Sources & Limitations
+
+- Category, brand, and product sample records use verified, direct Unsplash CDN URLs (`https://images.unsplash.com/photo-...`) with `imagePublicId: null`.
+- Setting `imagePublicId: null` ensures external sample URLs are never mistaken for Cloudinary uploads and will not trigger Cloudinary deletion calls when an item is updated or deleted.
+- **Limitation & Offline Recommendation:** External Unsplash URLs require internet access in the browser. For strictly offline local environments, serve static images from a local `/public/seed-assets` folder and reference your local server URL in `imageUrl`.
+
+### 6. Idempotency & Data Safety
+
+- All records are upserted deterministically inside a single database transaction using stable unique keys (`Role.name`, `Permission.code`, `User.email`, `Category.slug`, `Brand.slug`, `Product.slug`, `Stock.productId`, `Cart.userId`).
+- No `deleteMany()`, `TRUNCATE`, or destructive table resets are used.
+- Existing user passwords, existing stock quantities, existing cart quantities, and user-uploaded Cloudinary images (`imagePublicId !== null`) are preserved across reruns. Legacy seed rows missing `brandId`, `imageUrl` (when `imagePublicId` is `null`), or `originalPrice` are safely backfilled without overwriting user-modified fields.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
