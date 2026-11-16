@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CmsDocumentStatus } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UploadsService } from '../modules/uploads/uploads.service.js';
@@ -44,10 +48,10 @@ describe('CmsService', () => {
         findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi
           .fn()
-          .mockResolvedValue({ section: { documentId: DOC_ID } }),
+          .mockResolvedValue({ section: { documentId: DOC_ID }, content: {} }),
         create: vi.fn(async ({ data }) => ({ id: ITEM_ID, ...data })),
         update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data })),
-        delete: vi.fn().mockResolvedValue({ id: ITEM_ID }),
+        delete: vi.fn().mockResolvedValue({ id: ITEM_ID, content: {} }),
       },
       category: { findUnique: vi.fn().mockResolvedValue({ id: DOC_ID }) },
     };
@@ -79,6 +83,7 @@ describe('CmsService', () => {
         findUnique: vi
           .fn()
           .mockResolvedValue({ section: { documentId: DOC_ID } }),
+        findFirst: vi.fn().mockResolvedValue(null),
       },
       category: { findUnique: vi.fn().mockResolvedValue({ id: DOC_ID }) },
       $transaction: vi.fn(async (callback) => callback(tx)),
@@ -310,29 +315,202 @@ describe('CmsService', () => {
     });
   });
 
-  it('deletes a section and its items through the database cascade', async () => {
+  it('deletes a section and its items through the database cascade and cleans unused item images', async () => {
+    tx.cmsSection.findUnique
+      .mockResolvedValueOnce({ documentId: DOC_ID })
+      .mockResolvedValueOnce({
+        imagePublicId: 'ecommerce/cms/users/u/section',
+        items: [
+          { content: { imagePublicId: 'ecommerce/cms/users/u/item-1' } },
+          { content: { title: 'Text only' } },
+        ],
+      });
     await service.deleteSection(SECTION_ID);
     expect(tx.cmsSection.delete).toHaveBeenCalledWith({
       where: { id: SECTION_ID },
     });
+    expect(uploads.deleteCmsImage).toHaveBeenCalledWith(
+      'ecommerce/cms/users/u/section',
+    );
+    expect(uploads.deleteCmsImage).toHaveBeenCalledWith(
+      'ecommerce/cms/users/u/item-1',
+    );
   });
 
-  it('creates items after checking the optional Category relation and preserves null updates', async () => {
-    await service.createItem(SECTION_ID, { position: 0, categoryId: DOC_ID });
+  it('creates and updates items with dynamic JSON content and arbitrary nested values', async () => {
+    const content = {
+      type: 'slider-item',
+      imageUrl: 'https://example.com/banner.jpg',
+      alt: 'Banner',
+      tags: ['summer', 'sale'],
+      cta: { label: 'Shop now', href: '/sale' },
+    };
+    await service.createItem(SECTION_ID, { position: 0, content });
     expect(tx.cmsSectionItem.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+      data: {
         sectionId: SECTION_ID,
-        categoryId: DOC_ID,
-      }),
+        position: 0,
+        content,
+      },
     });
     prisma.cmsSectionItem.findUnique.mockResolvedValue({
       section: { documentId: DOC_ID },
     });
-    await service.updateItem(ITEM_ID, { title: null, categoryId: null });
+    tx.cmsSectionItem.findUnique.mockResolvedValue({
+      content,
+    });
+    await service.updateItem(ITEM_ID, {
+      position: 2,
+      content: { type: 'text', heading: 'Updated' },
+    });
     expect(tx.cmsSectionItem.update).toHaveBeenCalledWith({
       where: { id: ITEM_ID },
-      data: { title: null, categoryId: null },
+      data: {
+        position: 2,
+        content: { type: 'text', heading: 'Updated' },
+      },
     });
+  });
+
+  it('lists section items ordered by position ASC', async () => {
+    await service.listItems(SECTION_ID);
+    expect(prisma.cmsSectionItem.findMany).toHaveBeenCalledWith({
+      where: { sectionId: SECTION_ID },
+      orderBy: [{ position: 'asc' }, { id: 'asc' }],
+    });
+  });
+
+  it('maps duplicate item position conflicts (P2002) to ConflictException on create and update', async () => {
+    const p2002 = { code: 'P2002' };
+    tx.cmsSectionItem.create.mockRejectedValueOnce(p2002);
+    await expect(
+      service.createItem(SECTION_ID, { position: 0, content: { title: 'A' } }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    prisma.cmsSectionItem.findUnique.mockResolvedValue({
+      section: { documentId: DOC_ID },
+    });
+    tx.cmsSectionItem.update.mockRejectedValueOnce(p2002);
+    await expect(
+      service.updateItem(ITEM_ID, { position: 1 }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('creates an item with an uploaded Cloudinary image and injects imageUrl into content', async () => {
+    const file = { buffer: Buffer.from('img') } as Express.Multer.File;
+    await service.createItem(
+      SECTION_ID,
+      {
+        position: 0,
+        content: { type: 'image', alt: 'Summer Sale', link: '/sale' },
+      },
+      file,
+      USER_ID,
+    );
+    expect(uploads.uploadCmsImage).toHaveBeenCalledWith(file, USER_ID);
+    expect(tx.cmsSectionItem.create).toHaveBeenCalledWith({
+      data: {
+        sectionId: SECTION_ID,
+        position: 0,
+        content: {
+          type: 'image',
+          alt: 'Summer Sale',
+          link: '/sale',
+          imageUrl: 'https://cdn.test/cms.png',
+          imagePublicId: 'ecommerce/cms/users/u/cms',
+        },
+      },
+    });
+  });
+
+  it('replaces an item image while preserving existing content properties and cleans up the old asset', async () => {
+    const file = { buffer: Buffer.from('new-img') } as Express.Multer.File;
+    prisma.cmsSectionItem.findUnique.mockResolvedValue({
+      section: { documentId: DOC_ID },
+    });
+    tx.cmsSectionItem.findUnique.mockResolvedValue({
+      content: {
+        type: 'image',
+        alt: 'Old alt',
+        link: '/sale',
+        imageUrl: 'https://cdn.test/old.png',
+        imagePublicId: 'ecommerce/cms/users/u/old',
+      },
+    });
+    await service.updateItem(ITEM_ID, {}, file, USER_ID);
+    expect(tx.cmsSectionItem.update).toHaveBeenCalledWith({
+      where: { id: ITEM_ID },
+      data: {
+        content: {
+          type: 'image',
+          alt: 'Old alt',
+          link: '/sale',
+          imageUrl: 'https://cdn.test/cms.png',
+          imagePublicId: 'ecommerce/cms/users/u/cms',
+        },
+      },
+    });
+    expect(uploads.deleteCmsImage).toHaveBeenCalledWith(
+      'ecommerce/cms/users/u/old',
+    );
+  });
+
+  it('cleans up newly uploaded item image if database write fails', async () => {
+    const file = { buffer: Buffer.from('img') } as Express.Multer.File;
+    tx.cmsSectionItem.create.mockRejectedValueOnce({ code: 'P2002' });
+    await expect(
+      service.createItem(
+        SECTION_ID,
+        { position: 0, content: { type: 'image' } },
+        file,
+        USER_ID,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(uploads.deleteCmsImage).toHaveBeenCalledWith(
+      'ecommerce/cms/users/u/cms',
+    );
+  });
+
+  it('does not write to database when Cloudinary upload fails for an item', async () => {
+    const file = { buffer: Buffer.from('bad') } as Express.Multer.File;
+    uploads.uploadCmsImage.mockRejectedValueOnce(new Error('upload failed'));
+    await expect(
+      service.createItem(
+        SECTION_ID,
+        { position: 0, content: { type: 'image' } },
+        file,
+        USER_ID,
+      ),
+    ).rejects.toThrow('upload failed');
+    expect(tx.cmsSectionItem.create).not.toHaveBeenCalled();
+  });
+
+  it('protects shared Cloudinary assets when deleting or replacing a section item image', async () => {
+    tx.cmsSectionItem.delete.mockResolvedValueOnce({
+      id: ITEM_ID,
+      content: {
+        imageUrl: 'https://cdn.test/shared.png',
+        imagePublicId: 'ecommerce/cms/users/u/shared',
+      },
+    });
+    prisma.cmsSectionItem.findFirst.mockResolvedValueOnce({
+      id: '00000000-0000-4000-8000-000000000099',
+    });
+    await service.deleteItem(ITEM_ID);
+    expect(uploads.deleteCmsImage).not.toHaveBeenCalled();
+
+    tx.cmsSectionItem.delete.mockResolvedValueOnce({
+      id: ITEM_ID,
+      content: {
+        imageUrl: 'https://cdn.test/unique.png',
+        imagePublicId: 'ecommerce/cms/users/u/unique',
+      },
+    });
+    prisma.cmsSectionItem.findFirst.mockResolvedValueOnce(null);
+    await service.deleteItem(ITEM_ID);
+    expect(uploads.deleteCmsImage).toHaveBeenCalledWith(
+      'ecommerce/cms/users/u/unique',
+    );
   });
 
   it('rechecks the section under the document lock before creating an item', async () => {
@@ -340,7 +518,7 @@ describe('CmsService', () => {
     tx.cmsSection.findUnique.mockResolvedValueOnce(null);
 
     await expect(
-      service.createItem(SECTION_ID, { position: 0 }),
+      service.createItem(SECTION_ID, { position: 0, content: {} }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.cmsSectionItem.create).not.toHaveBeenCalled();
   });

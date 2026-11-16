@@ -61,7 +61,7 @@ Document keys must match the lowercase key pattern and be at most 100 characters
 
 Create-section JSON uses the current schema: `key`, `type`, non-negative `position`, optional `isVisible`, and an object-valued `content`. Section `type` is a validated string, not a server enum. The example content keys (`headline`, `supportingText`, `ctaLabel`, `ctaUrl`) are sample JSON content and are not a fixed server-side content schema.
 
-Section items support `position`, nullable `title`, `body`, `url`, `label`, and `categoryId`. URLs accept HTTP(S), `mailto:`, or root-relative paths. Omitted nullable fields stay unchanged on PATCH; explicit `null` clears them. Quantities/positions must be valid integers as enforced by each DTO. Unknown request properties are rejected by the global ValidationPipe.
+Section items support non-negative integer `position` and a dynamic JSON object `content` (allowing arbitrary nested objects and arrays, such as image slider metadata, feature cards, or external `imageUrl` values). Legacy fixed top-level properties (`title`, `body`, `url`, `label`, `categoryId`) are no longer accepted. Omitted fields stay unchanged on PATCH; explicit `null` for `position` or `content` is rejected. Quantities/positions must be valid integers as enforced by each DTO. Unknown request properties are rejected by the global ValidationPipe.
 
 The shared response interceptor wraps successful JSON as:
 
@@ -81,6 +81,8 @@ The only CMS routes accepting image files are resource-specific create/update re
 | `PATCH /cms/documents/:documentId` | `image` | optional `title`, `seoTitle`, `seoDescription` |
 | `POST /cms/documents/:documentId/sections` | `image` | required `key`, `type`, `position`, `content`; optional `isVisible` |
 | `PATCH /cms/sections/:sectionId` | `image` | any supported section fields, including `content` |
+| `POST /cms/sections/:sectionId/items` | `image` | required `position`, `content` (JSON string; `imageUrl` is injected into `content`) |
+| `PATCH /cms/items/:itemId` | `image` | optional `position`, `content` (JSON string; existing `content` properties are preserved when `content` is omitted) |
 
 The file limit is 5 MB. The shared `UploadsService` checks detected file bytes and accepts JPEG, PNG, WebP, or AVIF; the form-data field must be named exactly `image`. For section `content`, enter valid JSON text in the multipart field. To run an upload request, open Body → form-data, select the `image` row's type as **File**, and choose a local image. Postman does not resolve a filesystem path variable into a file attachment, so file selection is intentionally manual. These requests require `media:upload` in addition to the route's CMS permission and use the configured Cloudinary integration.
 
@@ -88,8 +90,8 @@ The negative file tests also require manual selection: choose a text/non-image f
 
 ## Negative tests and cleanup
 
-The negative folder covers missing/invalid tokens, a customer lacking CMS permission, a separate `cms:create`-only account check for `media:upload` (requires an account with that exact permission setup), duplicate document key, unknown DTO properties, malformed UUIDs, invalid pagination, empty reorder IDs, missing document/section relations, missing category relation, invalid URL scheme, unpublished/missing public pages, invalid file type, and oversized file. Error expectations reflect the current controllers, DTO validation, upload middleware, and global exception filter. A normal CUSTOMER token without `cms:create` only verifies the CMS permission check, not the additional media permission.
+The negative folder covers missing/invalid tokens, a customer lacking CMS permission, a separate `cms:create`-only account check for `media:upload` (requires an account with that exact permission setup), duplicate document key, unknown DTO properties (including legacy top-level `SectionItem` fields), negative item `position`, non-object `SectionItem` `content`, explicit `null` `content` on PATCH, malformed UUIDs, invalid pagination, empty reorder IDs, missing document/section relations, unpublished/missing public pages, invalid file type, and oversized file. Error expectations reflect the current controllers, DTO validation, upload middleware, and global exception filter. A normal CUSTOMER token without `cms:create` only verifies the CMS permission check, not the additional media permission.
 
-Use the `documentId`, `documentKey`, `sectionId`, `hiddenSectionId`, `sectionItemId`, and `secondSectionItemId` values captured by successful create responses. If a create request fails, its ID variable is left untouched rather than replaced with an empty value. The optional media checks capture `imageDocumentId` and `imageSectionId` for cleanup if you create those resources; remove those test records through the documented admin delete routes after review.
+Use the `documentId`, `documentKey`, `sectionId`, `hiddenSectionId`, `sectionItemId`, and `secondSectionItemId` values captured by successful create responses. If a create request fails, its ID variable is left untouched rather than replaced with an empty value. The optional media checks capture `imageDocumentId`, `imageSectionId`, and `imageSectionItemId` for cleanup if you create those resources; remove those test records through the documented admin delete routes after review.
 
 The collection has not been run through Postman/Newman as part of file generation. It is ready to import, but local account permissions, server availability, and Cloudinary configuration determine runtime results.

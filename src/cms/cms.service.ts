@@ -66,9 +66,6 @@ export class CmsService {
           include: {
             items: {
               orderBy: [{ position: 'asc' }, { id: 'asc' }],
-              include: {
-                category: { select: { id: true, name: true, slug: true } },
-              },
             },
           },
         },
@@ -181,13 +178,23 @@ export class CmsService {
         where: { id },
         select: {
           ogImagePublicId: true,
-          sections: { select: { imagePublicId: true } },
+          sections: {
+            select: {
+              imagePublicId: true,
+              items: { select: { content: true } },
+            },
+          },
         },
       });
       if (!document) throw new NotFoundException('CMS document not found.');
       const publicIds = [
         document.ogImagePublicId,
-        ...document.sections.map((section) => section.imagePublicId),
+        ...document.sections.flatMap((section) => [
+          section.imagePublicId,
+          ...(section.items ?? []).map((item) =>
+            this.extractItemImagePublicId(item.content),
+          ),
+        ]),
       ].filter((value): value is string => Boolean(value));
       await tx.cmsDocument.delete({ where: { id } });
       return publicIds;
@@ -270,19 +277,7 @@ export class CmsService {
               orderBy: [{ position: 'asc' }, { id: 'asc' }],
               select: {
                 position: true,
-                title: true,
-                body: true,
-                url: true,
-                label: true,
-                category: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                    imageUrl: true,
-                    isActive: true,
-                  },
-                },
+                content: true,
               },
             },
           },
@@ -290,23 +285,7 @@ export class CmsService {
       },
     });
     if (!document) throw new NotFoundException('Published CMS page not found.');
-    return {
-      ...document,
-      sections: document.sections.map((section) => ({
-        ...section,
-        items: section.items.map(({ category, ...item }) => ({
-          ...item,
-          category: category?.isActive
-            ? {
-                id: category.id,
-                name: category.name,
-                slug: category.slug,
-                imageUrl: category.imageUrl,
-              }
-            : null,
-        })),
-      })),
-    };
+    return document;
   }
 
   async listSections(documentId: string) {
@@ -370,9 +349,6 @@ export class CmsService {
         document: { select: { id: true, key: true, status: true } },
         items: {
           orderBy: [{ position: 'asc' }, { id: 'asc' }],
-          include: {
-            category: { select: { id: true, name: true, slug: true } },
-          },
         },
       },
     });
@@ -483,7 +459,7 @@ export class CmsService {
   }
 
   async deleteSection(id: string) {
-    const imagePublicId = await this.prisma.$transaction(async (tx) => {
+    const assets = await this.prisma.$transaction(async (tx) => {
       const before = await tx.cmsSection.findUnique({
         where: { id },
         select: { documentId: true },
@@ -492,13 +468,22 @@ export class CmsService {
       await this.lockDocument(tx, before.documentId);
       const section = await tx.cmsSection.findUnique({
         where: { id },
-        select: { imagePublicId: true },
+        select: {
+          imagePublicId: true,
+          items: { select: { content: true } },
+        },
       });
       if (!section) throw new NotFoundException('CMS section not found.');
+      const publicIds = [
+        section.imagePublicId,
+        ...(section.items ?? []).map((item) =>
+          this.extractItemImagePublicId(item.content),
+        ),
+      ].filter((value): value is string => Boolean(value));
       await tx.cmsSection.delete({ where: { id } });
-      return section.imagePublicId;
+      return publicIds;
     });
-    if (imagePublicId) await this.cleanupIfUnreferenced(imagePublicId);
+    await this.cleanupManyIfUnreferenced(assets);
     return { id, deleted: true };
   }
 
@@ -514,61 +499,62 @@ export class CmsService {
     return this.prisma.cmsSectionItem.findMany({
       where: { sectionId },
       orderBy: [{ position: 'asc' }, { id: 'asc' }],
-      include: { category: { select: { id: true, name: true, slug: true } } },
     });
   }
 
-  async createItem(sectionId: string, dto: CreateCmsSectionItemDto) {
+  async createItem(
+    sectionId: string,
+    dto: CreateCmsSectionItemDto,
+    file?: Express.Multer.File,
+    actorId = '',
+  ) {
+    this.validateContent(dto.content);
     const section = await this.prisma.cmsSection.findUnique({
       where: { id: sectionId },
       select: { documentId: true },
     });
     if (!section) throw new NotFoundException('CMS section not found.');
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockDocument(tx, section.documentId);
-      // Recheck after taking the document lock: the section may have been
-      // deleted between the initial lookup and lock acquisition.
-      if (
-        !(await tx.cmsSection.findUnique({
-          where: { id: sectionId },
-          select: { id: true },
-        }))
-      ) {
-        throw new NotFoundException('CMS section not found.');
-      }
-      if (
-        dto.categoryId &&
-        !(await tx.category.findUnique({
-          where: { id: dto.categoryId },
-          select: { id: true },
-        }))
-      ) {
-        throw new BadRequestException('The selected category does not exist.');
-      }
-      try {
-        return await tx.cmsSectionItem.create({
+    const uploaded = file
+      ? await this.uploads.uploadCmsImage(file, actorId)
+      : undefined;
+    const content = uploaded
+      ? {
+          ...dto.content,
+          imageUrl: uploaded.secure_url,
+          imagePublicId: uploaded.public_id,
+        }
+      : dto.content;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockDocument(tx, section.documentId);
+        // Recheck after taking the document lock: the section may have been
+        // deleted between the initial lookup and lock acquisition.
+        if (
+          !(await tx.cmsSection.findUnique({
+            where: { id: sectionId },
+            select: { id: true },
+          }))
+        ) {
+          throw new NotFoundException('CMS section not found.');
+        }
+        return tx.cmsSectionItem.create({
           data: {
             sectionId,
             position: dto.position,
-            ...(dto.title !== undefined && { title: dto.title }),
-            ...(dto.body !== undefined && { body: dto.body }),
-            ...(dto.url !== undefined && { url: dto.url }),
-            ...(dto.label !== undefined && { label: dto.label }),
-            ...(dto.categoryId !== undefined && { categoryId: dto.categoryId }),
+            content: content as Prisma.InputJsonValue,
           },
         });
-      } catch (error: unknown) {
-        if (hasPrismaErrorCode(error, 'P2002'))
-          throw new ConflictException(
-            'Item position already exists in this section.',
-          );
-        if (hasPrismaErrorCode(error, 'P2003'))
-          throw new BadRequestException(
-            'The selected category does not exist.',
-          );
-        throw error;
-      }
-    });
+      });
+    } catch (error: unknown) {
+      await this.cleanupUploaded(uploaded);
+      if (hasPrismaErrorCode(error, 'P2002'))
+        throw new ConflictException(
+          'Item position already exists in this section.',
+        );
+      if (hasPrismaErrorCode(error, 'P2003'))
+        throw new NotFoundException('CMS section not found.');
+      throw error;
+    }
   }
 
   async getItem(id: string) {
@@ -583,50 +569,91 @@ export class CmsService {
             document: { select: { status: true } },
           },
         },
-        category: { select: { id: true, name: true, slug: true } },
       },
     });
     if (!item) throw new NotFoundException('CMS section item not found.');
     return item;
   }
 
-  async updateItem(id: string, dto: UpdateCmsSectionItemDto) {
-    if (!Object.values(dto).some((value) => value !== undefined))
+  async updateItem(
+    id: string,
+    dto: UpdateCmsSectionItemDto,
+    file?: Express.Multer.File,
+    actorId = '',
+  ) {
+    if (!this.hasItemUpdate(dto, file))
       throw new BadRequestException(
         'At least one item field must be supplied.',
       );
+    if (dto.content !== undefined) this.validateContent(dto.content);
     const existing = await this.prisma.cmsSectionItem.findUnique({
       where: { id },
       select: { section: { select: { documentId: true } } },
     });
     if (!existing) throw new NotFoundException('CMS section item not found.');
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockDocument(tx, existing.section.documentId);
-      if (
-        dto.categoryId &&
-        !(await tx.category.findUnique({
-          where: { id: dto.categoryId },
-          select: { id: true },
-        }))
-      ) {
-        throw new BadRequestException('The selected category does not exist.');
+    const uploaded = file
+      ? await this.uploads.uploadCmsImage(file, actorId)
+      : undefined;
+    try {
+      const { updated, previousPublicId, nextPublicId } =
+        await this.prisma.$transaction(async (tx) => {
+          await this.lockDocument(tx, existing.section.documentId);
+          const previous = await tx.cmsSectionItem.findUnique({
+            where: { id },
+            select: { content: true },
+          });
+          if (!previous)
+            throw new NotFoundException('CMS section item not found.');
+          let nextContent: Record<string, unknown> | undefined;
+          if (uploaded) {
+            const baseContent =
+              dto.content !== undefined
+                ? dto.content
+                : isCmsJsonObject(previous.content)
+                  ? previous.content
+                  : {};
+            nextContent = {
+              ...baseContent,
+              imageUrl: uploaded.secure_url,
+              imagePublicId: uploaded.public_id,
+            };
+          } else if (dto.content !== undefined) {
+            nextContent = dto.content;
+          }
+          const updated = await tx.cmsSectionItem.update({
+            where: { id },
+            data: {
+              ...(dto.position !== undefined && { position: dto.position }),
+              ...(nextContent !== undefined && {
+                content: nextContent as Prisma.InputJsonValue,
+              }),
+            },
+          });
+          const prevId = this.extractItemImagePublicId(previous.content);
+          const nextId =
+            nextContent !== undefined
+              ? this.extractItemImagePublicId(nextContent)
+              : prevId;
+          return {
+            updated,
+            previousPublicId: prevId,
+            nextPublicId: nextId,
+          };
+        });
+      if (previousPublicId && previousPublicId !== nextPublicId) {
+        await this.cleanupIfUnreferenced(previousPublicId);
       }
-      try {
-        return await tx.cmsSectionItem.update({ where: { id }, data: dto });
-      } catch (error: unknown) {
-        if (hasPrismaErrorCode(error, 'P2002'))
-          throw new ConflictException(
-            'Item position already exists in this section.',
-          );
-        if (hasPrismaErrorCode(error, 'P2003'))
-          throw new BadRequestException(
-            'The selected category does not exist.',
-          );
-        if (hasPrismaErrorCode(error, 'P2025'))
-          throw new NotFoundException('CMS section item not found.');
-        throw error;
-      }
-    });
+      return updated;
+    } catch (error: unknown) {
+      await this.cleanupUploaded(uploaded);
+      if (hasPrismaErrorCode(error, 'P2002'))
+        throw new ConflictException(
+          'Item position already exists in this section.',
+        );
+      if (hasPrismaErrorCode(error, 'P2025'))
+        throw new NotFoundException('CMS section item not found.');
+      throw error;
+    }
   }
 
   async reorderItems(sectionId: string, ids: string[]) {
@@ -682,7 +709,7 @@ export class CmsService {
       select: { section: { select: { documentId: true } } },
     });
     if (!existing) throw new NotFoundException('CMS section item not found.');
-    return this.prisma.$transaction(async (tx) => {
+    const deleted = await this.prisma.$transaction(async (tx) => {
       await this.lockDocument(tx, existing.section.documentId);
       try {
         return await tx.cmsSectionItem.delete({ where: { id } });
@@ -692,6 +719,9 @@ export class CmsService {
         throw error;
       }
     });
+    const imagePublicId = this.extractItemImagePublicId(deleted.content);
+    if (imagePublicId) await this.cleanupIfUnreferenced(imagePublicId);
+    return deleted;
   }
 
   private async changePublicationStatus(
@@ -782,6 +812,24 @@ export class CmsService {
     );
   }
 
+  private hasItemUpdate(
+    dto: UpdateCmsSectionItemDto,
+    file?: Express.Multer.File,
+  ) {
+    return (
+      file !== undefined ||
+      Object.values(dto).some((value) => value !== undefined)
+    );
+  }
+
+  private extractItemImagePublicId(content: unknown): string | null {
+    if (!isCmsJsonObject(content)) return null;
+    const publicId = content.imagePublicId;
+    if (typeof publicId !== 'string') return null;
+    const trimmed = publicId.trim();
+    return trimmed || null;
+  }
+
   private async cleanupUploaded(image?: UploadedCmsImage) {
     if (!image) return;
     try {
@@ -797,17 +845,27 @@ export class CmsService {
 
   private async cleanupIfUnreferenced(publicId: string) {
     try {
-      const [documentReference, sectionReference] = await Promise.all([
-        this.prisma.cmsDocument.findFirst({
-          where: { ogImagePublicId: publicId },
-          select: { id: true },
-        }),
-        this.prisma.cmsSection.findFirst({
-          where: { imagePublicId: publicId },
-          select: { id: true },
-        }),
-      ]);
-      if (documentReference || sectionReference) return;
+      const [documentReference, sectionReference, itemReference] =
+        await Promise.all([
+          this.prisma.cmsDocument.findFirst({
+            where: { ogImagePublicId: publicId },
+            select: { id: true },
+          }),
+          this.prisma.cmsSection.findFirst({
+            where: { imagePublicId: publicId },
+            select: { id: true },
+          }),
+          this.prisma.cmsSectionItem.findFirst({
+            where: {
+              content: {
+                path: ['imagePublicId'],
+                equals: publicId,
+              },
+            },
+            select: { id: true },
+          }),
+        ]);
+      if (documentReference || sectionReference || itemReference) return;
       const deleted = await this.uploads.deleteCmsImage(publicId);
       if (!deleted) this.logger.error('Replaced CMS image cleanup failed.');
     } catch {

@@ -358,17 +358,39 @@ export class CmsController {
   @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @RequirePermissions('cms:create')
   @ApiParam({ name: 'sectionId', format: 'uuid' })
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['position', 'content'],
+      properties: {
+        position: { type: 'integer', minimum: 0, maximum: 2_147_483_647 },
+        content: {
+          oneOf: [
+            { type: 'object', additionalProperties: true },
+            { type: 'string', format: 'json' },
+          ],
+        },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(uploadInterceptor())
   @ApiDocumentEndpoint({
     summary: 'Create section item',
-    description: `Creates a repeatable item. ${DYNAMIC_RBAC_DESCRIPTION}`,
+    description: `Creates a repeatable item with dynamic JSON content; optional image upload additionally requires media:upload. ${DYNAMIC_RBAC_DESCRIPTION}`,
     successStatus: 201,
-    errors: [400, 401, 403, 404, 409, 500],
+    errors: [400, 401, 403, 404, 409, 413, 500],
   })
   createItem(
     @Param('sectionId', ParseUUIDPipe) id: string,
     @Body() dto: CreateCmsSectionItemDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser('sub') actorId: string,
+    @Req() request: CmsRequest,
   ) {
-    return this.cms.createItem(id, dto);
+    this.assertUploadPermission(request, file);
+    return this.cms.createItem(id, dto, file, actorId);
   }
 
   @Patch('sections/:sectionId/items/reorder')
@@ -403,16 +425,37 @@ export class CmsController {
   @Throttle(RATE_LIMIT_POLICIES.ADMIN_WRITE)
   @RequirePermissions('cms:update')
   @ApiParam({ name: 'itemId', format: 'uuid' })
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        position: { type: 'integer', minimum: 0, maximum: 2_147_483_647 },
+        content: {
+          oneOf: [
+            { type: 'object', additionalProperties: true },
+            { type: 'string', format: 'json' },
+          ],
+        },
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(uploadInterceptor(), StripEmptyMultipartFieldsInterceptor)
   @ApiDocumentEndpoint({
     summary: 'Update section item',
-    description: `Updates item content; omitted nullable fields remain unchanged and explicit null clears them. ${DYNAMIC_RBAC_DESCRIPTION}`,
-    errors: [400, 401, 403, 404, 409, 500],
+    description: `Updates item position or dynamic JSON content; omitted fields remain unchanged. Optional image replacement requires media:upload. ${DYNAMIC_RBAC_DESCRIPTION}`,
+    errors: [400, 401, 403, 404, 409, 413, 500],
   })
   updateItem(
     @Param('itemId', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCmsSectionItemDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentUser('sub') actorId: string,
+    @Req() request: CmsRequest,
   ) {
-    return this.cms.updateItem(id, dto);
+    this.assertUploadPermission(request, file);
+    return this.cms.updateItem(id, dto, file, actorId);
   }
 
   @Delete('items/:itemId')

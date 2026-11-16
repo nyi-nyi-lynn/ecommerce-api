@@ -135,8 +135,7 @@ model Category {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  products        Product[]
-  cmsSectionItems CmsSectionItem[]
+  products Product[]
 }
 
 model CmsDocument {
@@ -184,22 +183,16 @@ model CmsSection {
 }
 
 model CmsSectionItem {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sectionId  String   @db.Uuid
-  position   Int
-  title      String?  @db.VarChar(200)
-  body       String?  @db.Text
-  url        String?  @db.Text
-  label      String?  @db.VarChar(120)
-  categoryId String?  @db.Uuid
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sectionId String   @db.Uuid
+  position  Int
+  content   Json     @db.JsonB
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  section  CmsSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  category Category?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  section CmsSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@unique([sectionId, position])
-  @@index([categoryId])
 }
 
 model Brand {

@@ -62,6 +62,7 @@ describe('CMS HTTP', () => {
           .fn()
           .mockResolvedValue({ section: { documentId: DOCUMENT_ID } }),
         findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn(async ({ data }) => ({
           id: '00000000-0000-4000-8000-000000000005',
           ...data,
@@ -69,7 +70,10 @@ describe('CMS HTTP', () => {
         update: vi.fn(async ({ where, data }) => ({ id: where.id, ...data })),
         delete: vi
           .fn()
-          .mockResolvedValue({ id: '00000000-0000-4000-8000-000000000005' }),
+          .mockResolvedValue({
+            id: '00000000-0000-4000-8000-000000000005',
+            content: {},
+          }),
       },
       category: { findUnique: vi.fn().mockResolvedValue({ id: DOCUMENT_ID }) },
     };
@@ -106,7 +110,10 @@ describe('CMS HTTP', () => {
       },
       cmsSectionItem: {
         findMany: vi.fn().mockResolvedValue([]),
-        findUnique: vi.fn().mockResolvedValue(null),
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ section: { documentId: DOCUMENT_ID } }),
+        findFirst: vi.fn().mockResolvedValue(null),
       },
       category: { findUnique: vi.fn().mockResolvedValue({ id: DOCUMENT_ID }) },
       $transaction: vi.fn(async (callback) => callback(tx)),
@@ -269,7 +276,7 @@ describe('CMS HTTP', () => {
     });
   });
 
-  it('creates sections under a document and items under a section', async () => {
+  it('creates sections under a document and items with dynamic JSON content under a section', async () => {
     const section = await request(app.getHttpServer())
       .post(`/api/cms/documents/${DOCUMENT_ID}/sections`)
       .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
@@ -284,8 +291,141 @@ describe('CMS HTTP', () => {
     const item = await request(app.getHttpServer())
       .post(`/api/cms/sections/${section.body.data.id}/items`)
       .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
-      .send({ position: 0, title: 'Shop', url: '/products' })
+      .send({
+        position: 0,
+        content: {
+          type: 'image',
+          imageUrl: 'https://example.com/image.jpg',
+          alt: 'Banner image',
+          title: 'Summer Sale',
+          link: '/sale',
+        },
+      })
       .expect(201);
     expect(item.body.data.position).toBe(0);
+    expect(item.body.data.content).toEqual({
+      type: 'image',
+      imageUrl: 'https://example.com/image.jpg',
+      alt: 'Banner image',
+      title: 'Summer Sale',
+      link: '/sale',
+    });
+  });
+
+  it('rejects old fixed top-level SectionItem properties and negative positions', async () => {
+    const sectionId = '00000000-0000-4000-8000-000000000004';
+    await request(app.getHttpServer())
+      .post(`/api/cms/sections/${sectionId}/items`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .send({ position: 0, title: 'Old field', content: { a: 1 } })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/cms/sections/${sectionId}/items`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .send({ position: -1, content: { a: 1 } })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/cms/sections/${sectionId}/items`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .send({ position: 0, content: 'not-json-object' })
+      .expect(400);
+  });
+
+  it('creates and replaces SectionItem images via multipart/form-data and enforces media:upload', async () => {
+    const sectionId = '00000000-0000-4000-8000-000000000004';
+    const itemId = '00000000-0000-4000-8000-000000000005';
+
+    // Without media:upload -> 403
+    await request(app.getHttpServer())
+      .post(`/api/cms/sections/${sectionId}/items`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .field('position', '0')
+      .field('content', JSON.stringify({ type: 'image', alt: 'Banner' }))
+      .attach('image', Buffer.from('img'), 'banner.png')
+      .expect(403);
+    expect(uploads.uploadCmsImage).not.toHaveBeenCalled();
+
+    // With media:upload -> 201
+    permissions[ADMIN_ID] = [
+      'cms:read',
+      'cms:create',
+      'cms:update',
+      'cms:delete',
+      'media:upload',
+    ];
+    const created = await request(app.getHttpServer())
+      .post(`/api/cms/sections/${sectionId}/items`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .field('position', '0')
+      .field(
+        'content',
+        JSON.stringify({ type: 'image', alt: 'Banner', link: '/sale' }),
+      )
+      .attach('image', Buffer.from('img'), 'banner.png')
+      .expect(201);
+    expect(created.body.data.content).toMatchObject({
+      type: 'image',
+      alt: 'Banner',
+      link: '/sale',
+      imageUrl: 'https://cdn.test/cms.png',
+    });
+
+    // Replace image via PATCH while omitting content
+    const updated = await request(app.getHttpServer())
+      .patch(`/api/cms/items/${itemId}`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .attach('image', Buffer.from('new-img'), 'banner2.png')
+      .expect(200);
+    expect(updated.body.data.content.imageUrl).toBe('https://cdn.test/cms.png');
+  });
+
+  it('preserves omitted vs explicit null semantics on SectionItem PATCH', async () => {
+    const itemId = '00000000-0000-4000-8000-000000000005';
+    await request(app.getHttpServer())
+      .patch(`/api/cms/items/${itemId}`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .send({ content: null })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/cms/items/${itemId}`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .send({ position: null })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/cms/items/${itemId}`)
+      .set('Authorization', `Bearer ${token(ADMIN_ID)}`)
+      .send({ position: 3 })
+      .expect(200);
+  });
+
+  it('returns ordered items with dynamic content on public CMS page endpoint', async () => {
+    stored = {
+      key: 'home',
+      title: 'Home',
+      seoTitle: null,
+      seoDescription: null,
+      ogImageUrl: null,
+      status: 'PUBLISHED',
+      sections: [
+        {
+          key: 'slider',
+          type: 'image-slider',
+          position: 0,
+          content: { autoplay: true },
+          imageUrl: null,
+          items: [
+            { position: 0, content: { type: 'image', imageUrl: 'https://cdn.test/1.png' } },
+            { position: 1, content: { type: 'image', imageUrl: 'https://cdn.test/2.png' } },
+          ],
+        },
+      ],
+    };
+    const response = await request(app.getHttpServer())
+      .get('/api/cms/pages/home')
+      .expect(200);
+    expect(response.body.data.sections[0].items).toEqual([
+      { position: 0, content: { type: 'image', imageUrl: 'https://cdn.test/1.png' } },
+      { position: 1, content: { type: 'image', imageUrl: 'https://cdn.test/2.png' } },
+    ]);
   });
 });
