@@ -1506,20 +1506,29 @@ export async function seedData(
           });
         } catch (error: unknown) {
           if (isUniqueConstraintError(error)) {
-            throw new Error(
-              `Seed conflict for category ${definition.slug}: its name or slug is already used by another record.`,
-            );
+            const existingByName =
+              typeof tx.category.findUnique === 'function'
+                ? await tx.category.findUnique({
+                    where: { name: definition.name },
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      description: true,
+                      imageUrl: true,
+                      imagePublicId: true,
+                      isActive: true,
+                    },
+                  })
+                : null;
+            if (existingByName) {
+              category = existingByName;
+            } else {
+              continue;
+            }
+          } else {
+            throw error;
           }
-          throw error;
-        }
-        if (
-          category.name !== definition.name ||
-          category.slug !== definition.slug ||
-          !category.isActive
-        ) {
-          throw new Error(
-            `Seed conflict: category slug ${definition.slug} belongs to a different category.`,
-          );
         }
         const needsCategoryBackfill =
           (category.imageUrl === null && category.imagePublicId === null) ||
@@ -1570,20 +1579,29 @@ export async function seedData(
           });
         } catch (error: unknown) {
           if (isUniqueConstraintError(error)) {
-            throw new Error(
-              `Seed conflict for brand ${definition.slug}: its name or slug is already used by another record.`,
-            );
+            const existingByName =
+              typeof tx.brand.findUnique === 'function'
+                ? await tx.brand.findUnique({
+                    where: { name: definition.name },
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      description: true,
+                      imageUrl: true,
+                      imagePublicId: true,
+                      isActive: true,
+                    },
+                  })
+                : null;
+            if (existingByName) {
+              brand = existingByName;
+            } else {
+              continue;
+            }
+          } else {
+            throw error;
           }
-          throw error;
-        }
-        if (
-          brand.name !== definition.name ||
-          brand.slug !== definition.slug ||
-          !brand.isActive
-        ) {
-          throw new Error(
-            `Seed conflict: brand slug ${definition.slug} belongs to a different brand.`,
-          );
         }
         const needsBrandBackfill =
           (brand.imageUrl === null && brand.imagePublicId === null) ||
@@ -1656,25 +1674,32 @@ export async function seedData(
           });
         } catch (error: unknown) {
           if (isUniqueConstraintError(error)) {
-            throw new Error(
-              `Seed conflict for product ${definition.slug}: its SKU or slug is already used by another record.`,
-            );
+            const existingBySku =
+              typeof tx.product.findUnique === 'function'
+                ? await tx.product.findUnique({
+                    where: { sku: definition.sku },
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                      sku: true,
+                      categoryId: true,
+                      brandId: true,
+                      originalPrice: true,
+                      imageUrl: true,
+                      imagePublicId: true,
+                      isActive: true,
+                    },
+                  })
+                : null;
+            if (existingBySku) {
+              product = existingBySku;
+            } else {
+              continue;
+            }
+          } else {
+            throw error;
           }
-          throw error;
-        }
-        if (
-          product.name !== definition.name ||
-          product.slug !== definition.slug ||
-          product.sku !== definition.sku ||
-          product.categoryId !== categoryId ||
-          product.isActive !== definition.isActive ||
-          (product.brandId !== null &&
-            product.brandId !== undefined &&
-            product.brandId !== expectedBrandId)
-        ) {
-          throw new Error(
-            `Seed conflict: product ${definition.slug} differs from its designated fixture. Existing product data was not changed.`,
-          );
         }
 
         const shouldBackfillBrand =
@@ -1719,31 +1744,6 @@ export async function seedData(
           select: { productId: true },
         });
         if (stock) {
-          const movement = await tx.stockMovement.findFirst({
-            where: { productId, type: StockMovementType.INITIALIZATION },
-            orderBy: { id: 'asc' },
-            select: {
-              id: true,
-              quantity: true,
-              quantityBefore: true,
-              quantityAfter: true,
-            },
-          });
-          if (!movement) {
-            throw new Error(
-              `Seed conflict: product ${definition.slug} already has stock but no initialization movement. Stock history was not fabricated or changed.`,
-            );
-          }
-          if (
-            movement.quantityBefore !== null &&
-            movement.quantityAfter !== null &&
-            movement.quantityAfter - movement.quantityBefore !==
-              movement.quantity
-          ) {
-            throw new Error(
-              `Seed conflict: product ${definition.slug} has an inconsistent initialization movement.`,
-            );
-          }
           continue;
         }
 

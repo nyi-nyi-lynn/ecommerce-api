@@ -617,4 +617,34 @@ describe('development seed', () => {
       'STAFF role already has restricted management permissions',
     );
   });
+
+  it('skips existing categories, brands, and products modified in the database without throwing seed conflicts', async () => {
+    const { prisma, state } = createMemoryPrisma();
+    const testInput = 'x'.repeat(16);
+    await seedData(prisma, testInput);
+
+    const product = state.products.get('ceramide-barrier-repair-moisturizer');
+    const category = state.categories.get('beauty-personal-care');
+    const brand = state.brands.get('samsung');
+    if (!product || !category || !brand) {
+      throw new Error('Expected fixtures missing.');
+    }
+
+    product.name = 'Custom Edited Moisturizer';
+    product.sku = 'CUSTOM-SKU-001';
+    product.isActive = false;
+    category.name = 'Custom Skincare';
+    brand.isActive = false;
+
+    await expect(seedData(prisma, testInput)).resolves.toMatchObject({
+      products: 44,
+      categories: 15,
+      brands: 16,
+    });
+    expect(product.name).toBe('Custom Edited Moisturizer');
+    expect(product.sku).toBe('CUSTOM-SKU-001');
+    expect(product.isActive).toBe(false);
+    expect(category.name).toBe('Custom Skincare');
+    expect(brand.isActive).toBe(false);
+  });
 });
