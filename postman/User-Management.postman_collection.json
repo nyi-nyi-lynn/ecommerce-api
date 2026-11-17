@@ -1,0 +1,174 @@
+{
+  "info": {
+    "name": "User Management API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Postman collection for the NestJS E-commerce User Management Module."
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api" },
+    { "key": "accessToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "roleId", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "List Users",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/users?page=1&limit=20&search=&role=&status=ACTIVE&sortBy=createdAt&sortOrder=desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["users"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "20" },
+            { "key": "search", "value": "" },
+            { "key": "role", "value": "" },
+            { "key": "status", "value": "ACTIVE" },
+            { "key": "sortBy", "value": "createdAt" },
+            { "key": "sortOrder", "value": "desc" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get User Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}"]
+        }
+      }
+    },
+    {
+      "name": "Create User",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Kyaw Kyaw\",\n  \"email\": \"kyawkyaw@example.com\",\n  \"phone\": \"+959400100099\",\n  \"password\": \"StrongPass123\",\n  \"roleId\": \"{{roleId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users",
+          "host": ["{{baseUrl}}"],
+          "path": ["users"]
+        }
+      }
+    },
+    {
+      "name": "Update User",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Kyaw Kyaw Updated\",\n  \"phone\": \"+959400100088\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}"]
+        }
+      }
+    },
+    {
+      "name": "Assign Role",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"roleId\": \"{{roleId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}/role",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}", "role"]
+        }
+      }
+    },
+    {
+      "name": "Suspend User",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"SUSPENDED\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "Reactivate User",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "Delete (Deactivate) User",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/users/{{userId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "{{userId}}"]
+        }
+      }
+    },
+    {
+      "name": "Get Current Profile",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/users/me",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "me"]
+        }
+      }
+    },
+    {
+      "name": "Update Current Profile",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Updated Name\",\n  \"phone\": \"+959400100077\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/me",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "me"]
+        }
+      }
+    }
+  ]
+}

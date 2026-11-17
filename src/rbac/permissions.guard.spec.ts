@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { UserStatus } from '../generated/prisma/client.js';
 import { PermissionsGuard } from './permissions.guard.js';
 import { RequirePermissions } from './permissions.decorator.js';
 
@@ -91,6 +92,17 @@ describe('PermissionsGuard', () => {
     await expect(
       guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      guard.canActivate(makeContext({ sub: userId })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('denies suspended or deactivated users even when isActive is true', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      isActive: true,
+      status: UserStatus.SUSPENDED,
+      role: { permissions: [{ permission: { code: 'category:create' } }] },
+    });
     await expect(
       guard.canActivate(makeContext({ sub: userId })),
     ).rejects.toBeInstanceOf(ForbiddenException);

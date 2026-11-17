@@ -8,6 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { UserStatus } from '../generated/prisma/client.js';
 import { PERMISSIONS_KEY } from './permissions.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface.js';
 
@@ -40,6 +41,7 @@ export class PermissionsGuard implements CanActivate {
         where: { id: userId },
         select: {
           isActive: true,
+          status: true,
           role: {
             select: {
               permissions: {
@@ -49,7 +51,11 @@ export class PermissionsGuard implements CanActivate {
           },
         },
       });
-      if (!user?.isActive || !user.role) {
+      if (
+        !user?.isActive ||
+        (user.status !== undefined && user.status !== UserStatus.ACTIVE) ||
+        !user.role
+      ) {
         throw new ForbiddenException('The user has no valid active role.');
       }
       request.rbacPermissions = new Set(

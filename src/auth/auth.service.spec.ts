@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
+import { UserStatus } from '../generated/prisma/client.js';
 
 vi.mock('bcrypt', () => ({
   hash: vi.fn().mockResolvedValue('hashed-password'),
@@ -208,6 +209,7 @@ describe('AuthService refresh sessions', () => {
         phone: true,
         roleId: true,
         isActive: true,
+        status: true,
         createdAt: true,
         updatedAt: true,
         role: {
@@ -324,5 +326,25 @@ describe('AuthService refresh sessions', () => {
     await expect(service.refresh(token.refreshToken)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
+  });
+
+  it('rejects login and refresh for suspended or deactivated accounts', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      ...user,
+      isActive: false,
+      status: UserStatus.SUSPENDED,
+    });
+    await expect(
+      service.login({ email: user.email, password: 'password123' }),
+    ).rejects.toThrow('Account is Suspended');
+
+    prisma.user.findUnique.mockResolvedValueOnce({
+      ...user,
+      isActive: true,
+      status: UserStatus.DEACTIVATED,
+    });
+    await expect(
+      service.login({ email: user.email, password: 'password123' }),
+    ).rejects.toThrow('Account is Disabled');
   });
 });

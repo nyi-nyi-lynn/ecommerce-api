@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
 import {
   createHash,
   randomBytes,
@@ -13,9 +12,13 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
-import { Prisma } from '../generated/prisma/client.js';
+import { Prisma, UserStatus } from '../generated/prisma/client.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import {
+  hashPassword,
+  verifyPassword,
+} from '../common/security/password.util.js';
 
 @Injectable()
 export class AuthService {
@@ -33,7 +36,7 @@ export class AuthService {
       throw new ConflictException('Email already registered');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const passwordHash = await hashPassword(dto.password);
     const customerRole = await this.prisma.role.findUnique({
       where: { name: 'CUSTOMER' },
     });
@@ -79,11 +82,15 @@ export class AuthService {
       },
     });
 
-    if (!user || !(await bcrypt.compare(dto.password, user.passwordHash))) {
+    if (!user || !(await verifyPassword(dto.password, user.passwordHash))) {
       throw new UnauthorizedException('Credential Error!!');
     }
-    if (!user.isActive) {
-      throw new UnauthorizedException('Account is Disabled');
+    if (!this.isUserAccountActive(user)) {
+      throw new UnauthorizedException(
+        user.status === UserStatus.SUSPENDED
+          ? 'Account is Suspended'
+          : 'Account is Disabled',
+      );
     }
 
     const tokens = await this.createSession(
@@ -115,7 +122,10 @@ export class AuthService {
         await this.revokeFamily(record.userId, record.familyId);
       throw new UnauthorizedException('Invalid refresh token');
     }
-    if (record.expiresAt <= new Date() || !record.user.isActive) {
+    if (
+      record.expiresAt <= new Date() ||
+      !this.isUserAccountActive(record.user)
+    ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -268,6 +278,7 @@ export class AuthService {
         phone: true,
         roleId: true,
         isActive: true,
+        status: true,
         createdAt: true,
         updatedAt: true,
         role: {
@@ -281,7 +292,7 @@ export class AuthService {
       },
     });
 
-    if (!user || !user.isActive) {
+    if (!user || !this.isUserAccountActive(user)) {
       throw new UnauthorizedException(
         user ? 'Account is Disabled' : 'User not found',
       );
@@ -292,6 +303,16 @@ export class AuthService {
       user: { ...safeUser, role: role.name },
       permissions: this.permissionCodes(role),
     };
+  }
+
+  private isUserAccountActive(user: {
+    isActive: boolean;
+    status?: UserStatus;
+  }): boolean {
+    return (
+      user.isActive &&
+      (user.status === undefined || user.status === UserStatus.ACTIVE)
+    );
   }
 
   private permissionCodes(role: {

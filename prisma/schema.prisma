@@ -56,16 +56,23 @@ enum CmsDocumentStatus {
   PUBLISHED
 }
 
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
 model User {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name         String   @db.VarChar(100)
-  email        String   @unique @db.VarChar(255)
-  phone        String?  @unique @db.VarChar(30)
+  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String     @db.VarChar(100)
+  email        String     @unique @db.VarChar(255)
+  phone        String?    @unique @db.VarChar(30)
   passwordHash String
-  roleId       String   @db.Uuid
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  roleId       String     @db.Uuid
+  isActive     Boolean    @default(true)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   cart                    Cart?
   orders                  Order[]

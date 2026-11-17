@@ -109,6 +109,12 @@ export const permissionDefinitions = [
   ['cms:create', 'Create CMS content'],
   ['cms:update', 'Update CMS content'],
   ['cms:delete', 'Delete CMS content'],
+  ['user:read', 'Read users'],
+  ['user:create', 'Create users'],
+  ['user:update', 'Update users'],
+  ['user:role:assign', 'Assign user roles'],
+  ['user:status:update', 'Update user account status'],
+  ['user:delete', 'Deactivate or delete users'],
   ['user:manage', 'Manage users'],
   ['role:manage', 'Manage roles and permissions'],
   ['media:upload', 'Upload product media'],
@@ -164,6 +170,12 @@ const administrativePermissionCodes = new Set<string>([
   'cms:create',
   'cms:update',
   'cms:delete',
+  'user:read',
+  'user:create',
+  'user:update',
+  'user:role:assign',
+  'user:status:update',
+  'user:delete',
   'user:manage',
   'role:manage',
   'media:upload',
@@ -172,6 +184,11 @@ const administrativePermissionCodes = new Set<string>([
 const staffForbiddenPermissionCodes = new Set<string>([
   'role:manage',
   'user:manage',
+  'user:create',
+  'user:update',
+  'user:role:assign',
+  'user:status:update',
+  'user:delete',
 ]);
 
 export const userDefinitions = [
