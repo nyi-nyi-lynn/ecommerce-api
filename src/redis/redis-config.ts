@@ -12,11 +12,80 @@ import {
 export interface RedisConnectionConfig {
   host: string;
   port: number;
+  username?: string;
   password?: string;
   db: number;
+  tls?: boolean;
+}
+
+function parseRedisUrl(rawUrl: string): {
+  REDIS_URL: string;
+  REDIS_HOST: string;
+  REDIS_PORT: number;
+  REDIS_USERNAME?: string;
+  REDIS_PASSWORD?: string;
+  REDIS_DB: number;
+  REDIS_TLS: boolean;
+} {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('REDIS_URL must be a valid redis:// or rediss:// URL');
+  }
+
+  if (parsed.protocol !== 'redis:' && parsed.protocol !== 'rediss:') {
+    throw new Error('REDIS_URL must use redis:// or rediss:// protocol');
+  }
+
+  const host = parsed.hostname.trim();
+  if (!host) {
+    throw new Error('REDIS_URL must include a non-empty hostname');
+  }
+
+  const port = parsed.port ? Number(parsed.port) : DEFAULT_REDIS_PORT;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('REDIS_URL port must be an integer between 1 and 65535');
+  }
+
+  const rawPathDb = parsed.pathname.replace(/^\/+/, '');
+  const db = rawPathDb === '' ? DEFAULT_REDIS_DB : Number(rawPathDb);
+  if (!Number.isInteger(db) || db < 0 || db > MAX_REDIS_DB) {
+    throw new Error(
+      `REDIS_URL database index must be an integer between 0 and ${MAX_REDIS_DB}`,
+    );
+  }
+
+  const username = parsed.username
+    ? decodeURIComponent(parsed.username)
+    : undefined;
+  const password = parsed.password
+    ? decodeURIComponent(parsed.password)
+    : undefined;
+
+  return {
+    REDIS_URL: rawUrl,
+    REDIS_HOST: host,
+    REDIS_PORT: port,
+    REDIS_USERNAME: username,
+    REDIS_PASSWORD: password,
+    REDIS_DB: db,
+    REDIS_TLS: parsed.protocol === 'rediss:',
+  };
 }
 
 export function validateRedisEnvironment(env: Record<string, unknown>) {
+  const rawUrl = env.REDIS_URL;
+  if (rawUrl !== undefined) {
+    if (typeof rawUrl !== 'string') {
+      throw new Error('REDIS_URL must be a string');
+    }
+    const trimmedUrl = rawUrl.trim();
+    if (trimmedUrl.length > 0) {
+      return parseRedisUrl(trimmedUrl);
+    }
+  }
+
   const rawHost = env.REDIS_HOST ?? DEFAULT_REDIS_HOST;
   if (typeof rawHost !== 'string') {
     throw new Error('REDIS_HOST must be a non-empty hostname or IP address');
@@ -77,6 +146,7 @@ export function getRedisConnectionConfig(
   config: ConfigService,
 ): RedisConnectionConfig {
   const validated = validateRedisEnvironment({
+    REDIS_URL: config.get<unknown>('REDIS_URL'),
     REDIS_HOST: config.get<unknown>('REDIS_HOST'),
     REDIS_PORT: config.get<unknown>('REDIS_PORT'),
     REDIS_PASSWORD: config.get<unknown>('REDIS_PASSWORD'),
@@ -86,19 +156,26 @@ export function getRedisConnectionConfig(
   return {
     host: validated.REDIS_HOST,
     port: validated.REDIS_PORT,
+    ...('REDIS_USERNAME' in validated && validated.REDIS_USERNAME !== undefined
+      ? { username: validated.REDIS_USERNAME }
+      : {}),
     password: validated.REDIS_PASSWORD,
     db: validated.REDIS_DB,
+    ...('REDIS_TLS' in validated && validated.REDIS_TLS ? { tls: true } : {}),
   };
 }
 
 export function buildRedisOptions(config: ConfigService): RedisOptions {
-  const { host, port, password, db } = getRedisConnectionConfig(config);
+  const { host, port, username, password, db, tls } =
+    getRedisConnectionConfig(config);
 
   return {
     host,
     port,
+    ...(username !== undefined ? { username } : {}),
     ...(password !== undefined ? { password } : {}),
     db,
+    ...(tls ? { tls: {} } : {}),
     lazyConnect: true,
     connectTimeout: DEFAULT_REDIS_CONNECT_TIMEOUT_MS,
     maxRetriesPerRequest: DEFAULT_REDIS_MAX_RETRIES_PER_REQUEST,

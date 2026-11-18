@@ -31,6 +31,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     instrument: ObserveInstrument,
   });
+  app.enableShutdownHooks();
   app.set('trust proxy', resolveTrustProxy(process.env.TRUST_PROXY));
   app.enableCors({
     origin: resolveCorsOrigin(process.env.CORS_ORIGIN),

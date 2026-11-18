@@ -27,7 +27,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    await this.connect();
+    const rawFailOpen = this.config.get<unknown>('RATE_LIMIT_FAIL_OPEN');
+    const failOpen =
+      rawFailOpen === true ||
+      (typeof rawFailOpen === 'string' &&
+        rawFailOpen.trim().toLowerCase() === 'true');
+
+    try {
+      await this.connect();
+    } catch (error) {
+      if (failOpen) {
+        this.logger.warn(
+          `Redis unavailable at startup; continuing in fail-open mode (${this.formatTarget()})`,
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

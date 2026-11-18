@@ -9,6 +9,18 @@ import { ApiDocumentEndpoint } from './common/swagger/swagger.decorators.js';
 export class AppController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Get('health')
+  @SkipThrottle()
+  @ApiDocumentEndpoint({
+    summary: 'Check application health',
+    description: 'Returns basic liveness status for load balancers and PaaS.',
+  })
+  checkHealth() {
+    return {
+      status: 'ok',
+    };
+  }
+
   @Get('health/db')
   @SkipThrottle()
   @ApiDocumentEndpoint({

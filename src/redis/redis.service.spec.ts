@@ -117,6 +117,29 @@ describe('Redis Integration (Phase 2)', () => {
         'secret-value',
       );
     });
+
+    it('parses REDIS_URL including rediss:// TLS connections', () => {
+      const config = new ConfigService({
+        REDIS_URL: 'rediss://default:s3cr%40t@redis.example.com:6380/3',
+      });
+
+      expect(buildRedisOptions(config)).toEqual({
+        host: 'redis.example.com',
+        port: 6380,
+        username: 'default',
+        password: 's3cr@t',
+        db: 3,
+        tls: {},
+        lazyConnect: true,
+        connectTimeout: 5000,
+        maxRetriesPerRequest: 1,
+        enableOfflineQueue: false,
+      });
+
+      expect(() =>
+        validateRedisEnvironment({ REDIS_URL: 'http://localhost:6379' }),
+      ).toThrow(/REDIS_URL/);
+    });
   });
 
   describe('RedisService Lifecycle, Operations, and Error Handling', () => {
