@@ -1801,7 +1801,7 @@ export async function seedData(
         carts: cartDefinitions.length,
       };
     },
-    { maxWait: 10_000, timeout: 30_000 },
+    { maxWait: 10_000, timeout: 300_000 },
   );
 }
 
