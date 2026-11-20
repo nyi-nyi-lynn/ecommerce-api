@@ -1,6 +1,9 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -15,17 +18,35 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, UserStatus } from '../generated/prisma/client.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import {
   hashPassword,
   verifyPassword,
 } from '../common/security/password.util.js';
+import { MailingService } from '../modules/mailing/mailing.service.js';
+import {
+  DEFAULT_EMAIL_VERIFICATION_TTL_MINUTES,
+  DEFAULT_PASSWORD_RESET_TTL_MINUTES,
+} from '../modules/mailing/mailing.constants.js';
+
+const RESEND_VERIFICATION_GENERIC_MESSAGE =
+  'If an eligible account exists for this email, a verification link has been sent.';
+const FORGOT_PASSWORD_GENERIC_MESSAGE =
+  'If an account exists for this email, a password reset link has been sent.';
+const INVALID_VERIFICATION_TOKEN_MESSAGE =
+  'Invalid or expired verification token.';
+const INVALID_RESET_TOKEN_MESSAGE =
+  'Invalid or expired password reset token.';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    @Optional() private readonly mailing?: MailingService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -55,6 +76,7 @@ export class AuthService {
         name: true,
         email: true,
         phone: true,
+        emailVerifiedAt: true,
         role: { select: { name: true } },
         createdAt: true,
       },
@@ -64,7 +86,25 @@ export class AuthService {
       user.email,
       user.role.name,
     );
-    return { user: { ...user, role: user.role.name }, ...tokens };
+    await this.issueEmailVerification(user.id, user.email, user.name);
+    if (this.mailing?.sendWelcomeEmail) {
+      await this.mailing
+        .sendWelcomeEmail(user.email, { recipientName: user.name })
+        .catch(() => {
+          this.logger.warn(
+            `Welcome email dispatch failed for user ${user.id}; account remains active.`,
+          );
+        });
+    }
+    return {
+      user: {
+        ...user,
+        emailVerifiedAt: user.emailVerifiedAt ?? null,
+        isEmailVerified: Boolean(user.emailVerifiedAt),
+        role: user.role.name,
+      },
+      ...tokens,
+    };
   }
 
   async login(dto: LoginDto) {
@@ -100,7 +140,12 @@ export class AuthService {
     );
     const { passwordHash: _, role, ...safeUser } = user;
     return {
-      user: { ...safeUser, role: role.name },
+      user: {
+        ...safeUser,
+        emailVerifiedAt: user.emailVerifiedAt ?? null,
+        isEmailVerified: Boolean(user.emailVerifiedAt),
+        role: role.name,
+      },
       permissions: this.permissionCodes(role),
       ...tokens,
     };
@@ -203,6 +248,281 @@ export class AuthService {
     await this.revokeFamily(token.userId, token.familyId);
   }
 
+  async verifyEmail(rawToken: string) {
+    const tokenHash = this.hashToken(rawToken);
+    const now = new Date();
+    const record = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: {
+          select: {
+            id: true,
+            isActive: true,
+            status: true,
+            emailVerifiedAt: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !record ||
+      !this.hashMatches(record.tokenHash, tokenHash) ||
+      record.usedAt !== null ||
+      record.expiresAt <= now ||
+      !this.isUserAccountActive(record.user)
+    ) {
+      throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
+    }
+
+    const verifiedAt = await this.prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.emailVerificationToken.updateMany({
+          where: {
+            id: record.id,
+            tokenHash: record.tokenHash,
+            usedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { usedAt: now },
+        });
+        if (claimed.count !== 1) {
+          throw new BadRequestException(INVALID_VERIFICATION_TOKEN_MESSAGE);
+        }
+
+        const effectiveVerifiedAt = record.user.emailVerifiedAt ?? now;
+        await tx.user.update({
+          where: { id: record.userId },
+          data: { emailVerifiedAt: effectiveVerifiedAt },
+        });
+        await tx.emailVerificationToken.updateMany({
+          where: {
+            userId: record.userId,
+            usedAt: null,
+          },
+          data: { usedAt: now },
+        });
+
+        return effectiveVerifiedAt;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+
+    return {
+      verified: true,
+      emailVerifiedAt: verifiedAt,
+    };
+  }
+
+  async resendVerification(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        isActive: true,
+        status: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    if (user && this.isUserAccountActive(user) && !user.emailVerifiedAt) {
+      await this.issueEmailVerification(user.id, user.email, user.name);
+    } else {
+      // Constant-work token generation to reduce timing differences.
+      this.newOpaqueToken();
+    }
+
+    return { message: RESEND_VERIFICATION_GENERIC_MESSAGE };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        isActive: true,
+        status: true,
+      },
+    });
+
+    const generated = this.newOpaqueToken();
+
+    if (user && this.isUserAccountActive(user)) {
+      const now = new Date();
+      const ttlMinutes =
+        this.mailing?.getPasswordResetTtlMinutes() ??
+        DEFAULT_PASSWORD_RESET_TTL_MINUTES;
+      const expiresAt = new Date(now.getTime() + ttlMinutes * 60_000);
+
+      await this.prisma.$transaction(
+        async (tx) => {
+          await tx.passwordResetToken.updateMany({
+            where: { userId: user.id, usedAt: null },
+            data: { usedAt: now },
+          });
+          await tx.passwordResetToken.create({
+            data: {
+              userId: user.id,
+              tokenHash: generated.hash,
+              expiresAt,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
+
+      if (this.mailing) {
+        const resetUrl = this.mailing.buildFrontendUrl('/reset-password', {
+          token: generated.value,
+        });
+        await this.mailing
+          .sendPasswordReset(user.email, {
+            recipientName: user.name,
+            resetUrl,
+            expiresInMinutes: ttlMinutes,
+          })
+          .catch(() => {
+            this.logger.warn(
+              `Password reset email dispatch failed for user ${user.id}.`,
+            );
+          });
+      }
+    }
+
+    return { message: FORGOT_PASSWORD_GENERIC_MESSAGE };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('Passwords do not match.');
+    }
+
+    const tokenHash = this.hashToken(dto.token);
+    const now = new Date();
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: {
+        user: {
+          select: {
+            id: true,
+            isActive: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !record ||
+      !this.hashMatches(record.tokenHash, tokenHash) ||
+      record.usedAt !== null ||
+      record.expiresAt <= now ||
+      !this.isUserAccountActive(record.user)
+    ) {
+      throw new BadRequestException(INVALID_RESET_TOKEN_MESSAGE);
+    }
+
+    const passwordHash = await hashPassword(dto.newPassword);
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.passwordResetToken.updateMany({
+          where: {
+            id: record.id,
+            tokenHash: record.tokenHash,
+            usedAt: null,
+            expiresAt: { gt: now },
+          },
+          data: { usedAt: now },
+        });
+        if (claimed.count !== 1) {
+          throw new BadRequestException(INVALID_RESET_TOKEN_MESSAGE);
+        }
+
+        await tx.user.update({
+          where: { id: record.userId },
+          data: { passwordHash },
+        });
+
+        await tx.passwordResetToken.updateMany({
+          where: { userId: record.userId, usedAt: null },
+          data: { usedAt: now },
+        });
+
+        await tx.refreshToken.updateMany({
+          where: { userId: record.userId, revokedAt: null },
+          data: { revokedAt: now },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+
+    return {
+      message:
+        'Password has been reset successfully. Please log in with your new password.',
+    };
+  }
+
+  private async issueEmailVerification(
+    userId: string,
+    email: string,
+    name: string,
+  ): Promise<void> {
+    if (!this.prisma.emailVerificationToken) {
+      return;
+    }
+
+    const now = new Date();
+    const ttlMinutes =
+      this.mailing?.getEmailVerificationTtlMinutes() ??
+      DEFAULT_EMAIL_VERIFICATION_TTL_MINUTES;
+    const expiresAt = new Date(now.getTime() + ttlMinutes * 60_000);
+    const generated = this.newOpaqueToken();
+
+    try {
+      await this.prisma.$transaction(
+        async (tx) => {
+          await tx.emailVerificationToken.updateMany({
+            where: { userId, usedAt: null },
+            data: { usedAt: now },
+          });
+          await tx.emailVerificationToken.create({
+            data: {
+              userId,
+              tokenHash: generated.hash,
+              expiresAt,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+      );
+
+      if (this.mailing) {
+        const verificationUrl = this.mailing.buildFrontendUrl('/verify-email', {
+          token: generated.value,
+        });
+        await this.mailing.sendEmailVerification(email, {
+          recipientName: name,
+          verificationUrl,
+          expiresInMinutes: ttlMinutes,
+        });
+      }
+    } catch {
+      this.logger.warn(
+        `Email verification issuance failed for user ${userId}; account remains active.`,
+      );
+    }
+  }
+
+  private newOpaqueToken() {
+    const value = randomBytes(32).toString('base64url');
+    return { value, hash: this.hashToken(value) };
+  }
+
   private async createSession(userId: string, email: string, role: string) {
     const refreshToken = this.newRefreshToken();
     await this.prisma.refreshToken.create({
@@ -266,7 +586,12 @@ export class AuthService {
 
   private safeUser(user: any) {
     const { passwordHash: _passwordHash, role, ...rest } = user;
-    return { ...rest, role: role.name };
+    return {
+      ...rest,
+      emailVerifiedAt: user.emailVerifiedAt ?? null,
+      isEmailVerified: Boolean(user.emailVerifiedAt),
+      role: role.name,
+    };
   }
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -279,6 +604,7 @@ export class AuthService {
         roleId: true,
         isActive: true,
         status: true,
+        emailVerifiedAt: true,
         createdAt: true,
         updatedAt: true,
         role: {
@@ -300,7 +626,12 @@ export class AuthService {
 
     const { role, ...safeUser } = user;
     return {
-      user: { ...safeUser, role: role.name },
+      user: {
+        ...safeUser,
+        emailVerifiedAt: user.emailVerifiedAt ?? null,
+        isEmailVerified: Boolean(user.emailVerifiedAt),
+        role: role.name,
+      },
       permissions: this.permissionCodes(role),
     };
   }

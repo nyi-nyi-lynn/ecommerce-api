@@ -19,6 +19,8 @@ import {
   resolvePaginationParams,
 } from '../common/pagination/pagination.util.js';
 import { UploadsService } from '../modules/uploads/uploads.service.js';
+import { MailingService } from '../modules/mailing/mailing.service.js';
+import type { PaymentNotificationKind } from '../modules/mailing/mailing.interface.js';
 import {
   BLOCKING_ATTEMPT_STATUSES,
   ORDER_PAYMENT_STATUS,
@@ -66,6 +68,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly uploads?: UploadsService,
+    @Optional() private readonly mailing?: MailingService,
   ) {}
 
   async getCustomerOrderPayments(userId: string, orderId: string) {
@@ -127,7 +130,7 @@ export class PaymentsService {
     const uploaded = await this.uploads.uploadPaymentProofImage(image, userId);
 
     try {
-      return await this.prisma.$transaction(
+      const attempt = await this.prisma.$transaction(
         async (tx) => {
           await this.lockOrder(tx, orderId, userId);
           const order = await this.ensureOrderEligibleForManualPayment(
@@ -136,7 +139,7 @@ export class PaymentsService {
             userId,
           );
 
-          const attempt = await tx.paymentAttempt.create({
+          const createdAttempt = await tx.paymentAttempt.create({
             data: {
               orderId,
               method: PaymentMethod.MANUAL,
@@ -166,17 +169,32 @@ export class PaymentsService {
           });
           await tx.paymentEvent.create({
             data: {
-              paymentAttemptId: attempt.id,
+              paymentAttemptId: createdAttempt.id,
               eventType: 'MANUAL_SUBMITTED',
               previousStatus: null,
               newStatus: PaymentStatus.UNDER_REVIEW,
               actorId: userId,
             },
           });
-          return attempt;
+          return createdAttempt;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
       );
+
+      await this.notifyPaymentEvent({
+        kind: 'MANUAL_SUBMITTED',
+        dedupKey: `payment:manual-submitted:${attempt.id}`,
+        orderId: attempt.orderId,
+        userId,
+        paymentStatus: attempt.status,
+        paymentMethod: attempt.method,
+        amount: String(attempt.amount),
+        currency: attempt.currency,
+        providerCode: attempt.providerCode,
+        transactionReference: attempt.transactionReference,
+      });
+
+      return attempt;
     } catch (error) {
       const cleanupSucceeded = await this.uploads
         .deletePaymentProofImage(uploaded.public_id)
@@ -239,7 +257,7 @@ export class PaymentsService {
 
   async approveManualPayment(attemptId: string, actorId: string) {
     this.validateId(attemptId);
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         const initial = await tx.paymentAttempt.findUnique({
           where: { id: attemptId },
@@ -315,6 +333,22 @@ export class PaymentsService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
+
+    await this.notifyPaymentEvent({
+      kind: 'MANUAL_APPROVED',
+      dedupKey: `payment:manual-approved:${result.id}`,
+      orderId: result.orderId,
+      orderNumber: result.order?.orderNumber,
+      userId: result.order?.userId,
+      paymentStatus: result.status,
+      paymentMethod: result.method,
+      amount: String(result.amount),
+      currency: result.currency,
+      providerCode: result.providerCode,
+      transactionReference: result.transactionReference,
+    });
+
+    return result;
   }
 
   async rejectManualPayment(
@@ -323,7 +357,7 @@ export class PaymentsService {
     dto: RejectPaymentDto,
   ) {
     this.validateId(attemptId);
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         const initial = await tx.paymentAttempt.findUnique({
           where: { id: attemptId },
@@ -379,11 +413,28 @@ export class PaymentsService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
+
+    await this.notifyPaymentEvent({
+      kind: 'MANUAL_REJECTED',
+      dedupKey: `payment:manual-rejected:${result.id}`,
+      orderId: result.orderId,
+      orderNumber: result.order?.orderNumber,
+      userId: result.order?.userId,
+      paymentStatus: result.status,
+      paymentMethod: result.method,
+      amount: String(result.amount),
+      currency: result.currency,
+      providerCode: result.providerCode,
+      transactionReference: result.transactionReference,
+      rejectionReason: result.rejectionReason ?? dto.reason.trim(),
+    });
+
+    return result;
   }
 
   async collectCod(orderId: string, actorId: string) {
     this.validateId(orderId);
-    return this.prisma.$transaction(
+    const result = await this.prisma.$transaction(
       async (tx) => {
         await this.lockOrder(tx, orderId);
         const order = await tx.order.findUnique({
@@ -440,6 +491,20 @@ export class PaymentsService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
+
+    await this.notifyPaymentEvent({
+      kind: 'COD_COLLECTED',
+      dedupKey: `payment:cod-collected:${result.id}`,
+      orderId: result.orderId,
+      orderNumber: result.order?.orderNumber,
+      userId: result.order?.userId,
+      paymentStatus: result.status,
+      paymentMethod: result.method,
+      amount: String(result.amount),
+      currency: result.currency,
+    });
+
+    return result;
   }
 
   private async lockOrder(
@@ -530,5 +595,66 @@ export class PaymentsService {
   private validateId(id: string) {
     if (typeof id !== 'string' || !isUUID(id))
       throw new BadRequestException('A valid ID is required.');
+  }
+
+  private async notifyPaymentEvent(params: {
+    kind: PaymentNotificationKind;
+    dedupKey: string;
+    orderId: string;
+    orderNumber?: string;
+    userId?: string;
+    paymentStatus: PaymentStatus;
+    paymentMethod: PaymentMethod;
+    amount: string;
+    currency: string;
+    providerCode?: string | null;
+    transactionReference?: string | null;
+    rejectionReason?: string | null;
+  }): Promise<void> {
+    if (!this.mailing) return;
+
+    try {
+      let orderNumber = params.orderNumber;
+      let userId = params.userId;
+
+      if ((!orderNumber || !userId) && this.prisma.order?.findUnique) {
+        const order = await this.prisma.order.findUnique({
+          where: { id: params.orderId },
+          select: { orderNumber: true, userId: true },
+        });
+        orderNumber = orderNumber ?? order?.orderNumber;
+        userId = userId ?? order?.userId;
+      }
+
+      if (!userId || !this.prisma.user?.findUnique) return;
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, name: true },
+      });
+      if (!user?.email) return;
+
+      await this.mailing.sendPaymentNotification(
+        user.email,
+        {
+          recipientName: user.name,
+          orderNumber: orderNumber ?? params.orderId,
+          kind: params.kind,
+          paymentStatus: params.paymentStatus,
+          paymentMethod: params.paymentMethod,
+          amount: params.amount,
+          currency: params.currency,
+          providerCode: params.providerCode,
+          transactionReference: params.transactionReference,
+          rejectionReason: params.rejectionReason,
+          orderUrl: this.mailing.buildFrontendUrl(`/orders/${params.orderId}`),
+        },
+        params.dedupKey,
+      );
+    } catch {
+      this.logger.warn(
+        `Payment notification (${params.kind}) failed for order ${params.orderId}.`,
+      );
+    }
   }
 }

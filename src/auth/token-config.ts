@@ -1,4 +1,5 @@
 import { validateRedisEnvironment } from '../redis/redis-config.js';
+import { validateMailingEnvironment } from '../modules/mailing/mailing-config.js';
 
 const ACCESS_TTL_PATTERN = /^(?:[1-9]\d*)(?:s|m|h|d)$/;
 const MAX_ACCESS_TTL_SECONDS = 24 * 60 * 60;
@@ -37,11 +38,13 @@ export function validateEnvironment(env: Record<string, unknown>) {
   }
 
   const redisConfig = validateRedisEnvironment(env);
+  const mailingConfig = validateMailingEnvironment(env);
 
   return {
     ...env,
     JWT_ACCESS_TOKEN_TTL: accessTtl,
     JWT_REFRESH_TOKEN_TTL_SECONDS: refreshSeconds,
     ...redisConfig,
+    ...mailingConfig,
   };
 }

@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -25,6 +27,7 @@ import {
 } from '../payments/payment-status.rules.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StockService } from '../stock/stock.service.js';
+import { MailingService } from '../modules/mailing/mailing.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { CheckoutOrderDto } from './dto/checkout-order.dto.js';
 import { QueryAdminOrdersDto, QueryOrdersDto } from './dto/query-orders.dto.js';
@@ -82,9 +85,12 @@ type OrderShipping = Pick<
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly stock: StockService,
+    @Optional() private readonly mailing?: MailingService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -92,14 +98,16 @@ export class OrdersService {
     const requested = dto.items ?? [];
     this.validateOrderLines(requested);
 
-    return this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
       return this.createOrderInTransaction(tx, userId, requested, dto);
     });
+    await this.notifyOrderCreated(order);
+    return order;
   }
 
   async checkout(userId: string, dto: CheckoutOrderDto) {
     this.validatePaymentMethod(dto.paymentMethod);
-    return this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
       // Serialize checkout and Cart writes for this owner. The next statement
       // reads CartItems after any preceding checkout has committed.
       const carts = await tx.$queryRaw<Array<{ id: string }>>`
@@ -118,7 +126,7 @@ export class OrdersService {
       }
 
       this.validateOrderLines(cartItems);
-      const order = await this.createOrderInTransaction(
+      const created = await this.createOrderInTransaction(
         tx,
         userId,
         cartItems,
@@ -127,8 +135,10 @@ export class OrdersService {
 
       // Keep the Cart intact unless the Order and every stock movement succeed.
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-      return order;
+      return created;
     });
+    await this.notifyOrderCreated(order);
+    return order;
   }
 
   private validatePaymentMethod(method?: PaymentMethod) {
@@ -306,7 +316,7 @@ export class OrdersService {
   }
 
   async cancelMine(userId: string, orderId: string) {
-    return this.prisma.$transaction(
+    const updatedOrder = await this.prisma.$transaction(
       async (tx) => {
         await this.lockOrder(tx, orderId, userId);
         const order = await tx.order.findFirst({
@@ -335,6 +345,9 @@ export class OrdersService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
+
+    await this.notifyOrderStatusUpdated(updatedOrder, OrderStatus.PENDING);
+    return updatedOrder;
   }
 
   async updateStatus(
@@ -342,7 +355,8 @@ export class OrdersService {
     dto: UpdateOrderStatusDto,
     actorId: string,
   ) {
-    return this.prisma.$transaction(
+    let previousStatus: OrderStatus | undefined;
+    const updatedOrder = await this.prisma.$transaction(
       async (tx) => {
         await this.lockOrder(tx, orderId);
         const order = await tx.order.findUnique({
@@ -355,6 +369,7 @@ export class OrdersService {
           },
         });
         if (!order) throw new NotFoundException('Order not found.');
+        previousStatus = order.status;
         if (!allowedTransitions[order.status].includes(dto.status)) {
           throw new ConflictException(
             `Cannot transition an order from ${order.status} to ${dto.status}.`,
@@ -384,6 +399,9 @@ export class OrdersService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
+
+    await this.notifyOrderStatusUpdated(updatedOrder, previousStatus);
+    return updatedOrder;
   }
 
   private async lockOrder(
@@ -495,5 +513,96 @@ export class OrdersService {
         order.id,
       );
     }
+  }
+
+  private async notifyOrderCreated(order: {
+    id: string;
+    orderNumber: string;
+    userId: string;
+    totalAmount: Prisma.Decimal | string | number;
+    paymentMethod: PaymentMethod;
+    shippingName: string;
+    shippingPhone: string;
+    shippingAddress: string;
+    items: Array<{
+      productName: string;
+      quantity: number;
+      unitPrice: Prisma.Decimal | string | number;
+      subtotal: Prisma.Decimal | string | number;
+    }>;
+  }): Promise<void> {
+    if (!this.mailing) return;
+    try {
+      const recipient = await this.findNotificationRecipient(order.userId);
+      if (!recipient) return;
+      await this.mailing.sendOrderConfirmation(
+        recipient.email,
+        {
+          recipientName: recipient.name,
+          orderNumber: order.orderNumber,
+          totalAmount: String(order.totalAmount),
+          paymentMethod: order.paymentMethod,
+          shippingName: order.shippingName,
+          shippingPhone: order.shippingPhone,
+          shippingAddress: order.shippingAddress,
+          items: order.items.map((item) => ({
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPrice: String(item.unitPrice),
+            subtotal: String(item.subtotal),
+          })),
+          orderUrl: this.mailing.buildFrontendUrl(`/orders/${order.id}`),
+        },
+        `order:confirmed:${order.id}`,
+      );
+    } catch {
+      this.logger.warn(
+        `Order confirmation notification failed for order ${order.id}.`,
+      );
+    }
+  }
+
+  private async notifyOrderStatusUpdated(
+    order: {
+      id: string;
+      orderNumber: string;
+      userId: string;
+      status: OrderStatus;
+      totalAmount: Prisma.Decimal | string | number;
+    },
+    previousStatus?: OrderStatus,
+  ): Promise<void> {
+    if (!this.mailing) return;
+    try {
+      const recipient = await this.findNotificationRecipient(order.userId);
+      if (!recipient) return;
+      await this.mailing.sendOrderStatusUpdate(
+        recipient.email,
+        {
+          recipientName: recipient.name,
+          orderNumber: order.orderNumber,
+          previousStatus,
+          newStatus: order.status,
+          totalAmount: String(order.totalAmount),
+          orderUrl: this.mailing.buildFrontendUrl(`/orders/${order.id}`),
+        },
+        `order:status:${order.id}:${previousStatus ?? 'UNKNOWN'}:${order.status}`,
+      );
+    } catch {
+      this.logger.warn(
+        `Order status notification failed for order ${order.id}.`,
+      );
+    }
+  }
+
+  private async findNotificationRecipient(
+    userId: string,
+  ): Promise<{ email: string; name: string } | null> {
+    if (!this.prisma.user?.findUnique) return null;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+    return user?.email ? { email: user.email, name: user.name } : null;
   }
 }

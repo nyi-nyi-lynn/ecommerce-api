@@ -192,6 +192,8 @@ describe('AuthService refresh sessions', () => {
         phone: null,
         roleId,
         isActive: true,
+        emailVerifiedAt: null,
+        isEmailVerified: false,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         role: 'CUSTOMER',
@@ -210,6 +212,7 @@ describe('AuthService refresh sessions', () => {
         roleId: true,
         isActive: true,
         status: true,
+        emailVerifiedAt: true,
         createdAt: true,
         updatedAt: true,
         role: {

@@ -63,26 +63,59 @@ enum UserStatus {
 }
 
 model User {
-  id           String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name         String     @db.VarChar(100)
-  email        String     @unique @db.VarChar(255)
-  phone        String?    @unique @db.VarChar(30)
-  passwordHash String
-  roleId       String     @db.Uuid
-  isActive     Boolean    @default(true)
-  status       UserStatus @default(ACTIVE)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String     @db.VarChar(100)
+  email           String     @unique @db.VarChar(255)
+  phone           String?    @unique @db.VarChar(30)
+  passwordHash    String
+  roleId          String     @db.Uuid
+  isActive        Boolean    @default(true)
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?  @db.Timestamp(3)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   cart                    Cart?
   orders                  Order[]
   stockMovements          StockMovement[]
   refreshTokens           RefreshToken[]
-  paymentAttemptsReviewed PaymentAttempt[] @relation("PaymentAttemptReviewer")
-  paymentEvents           PaymentEvent[]   @relation("PaymentEventActor")
-  cmsDocumentsCreated     CmsDocument[]    @relation("CmsDocumentCreator")
-  cmsDocumentsPublished   CmsDocument[]    @relation("CmsDocumentPublisher")
-  role                    Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  paymentAttemptsReviewed PaymentAttempt[]         @relation("PaymentAttemptReviewer")
+  paymentEvents           PaymentEvent[]           @relation("PaymentEventActor")
+  cmsDocumentsCreated     CmsDocument[]            @relation("CmsDocumentCreator")
+  cmsDocumentsPublished   CmsDocument[]            @relation("CmsDocumentPublisher")
+  role                    Role                     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  expiresAt DateTime  @db.Timestamp(3)
+  usedAt    DateTime? @db.Timestamp(3)
+  createdAt DateTime  @default(now()) @db.Timestamp(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, usedAt])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  expiresAt DateTime  @db.Timestamp(3)
+  usedAt    DateTime? @db.Timestamp(3)
+  createdAt DateTime  @default(now()) @db.Timestamp(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, usedAt])
+  @@index([expiresAt])
 }
 
 model RefreshToken {

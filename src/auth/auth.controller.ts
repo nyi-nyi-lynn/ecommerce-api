@@ -12,6 +12,10 @@ import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
+import { VerifyEmailDto } from './dto/verify-email.dto.js';
+import { ResendVerificationDto } from './dto/resend-verification.dto.js';
+import { ForgotPasswordDto } from './dto/forgot-password.dto.js';
+import { ResetPasswordDto } from './dto/reset-password.dto.js';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { RATE_LIMIT_POLICIES } from '../common/rate-limit/rate-limit.constants.js';
@@ -114,6 +118,78 @@ export class AuthController {
   })
   async logout(@Body() dto: RefreshTokenDto): Promise<void> {
     await this.authService.logout(dto.refreshToken);
+  }
+
+  @Post('verify-email')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_STRICT)
+  @HttpCode(HttpStatus.OK)
+  @ApiDocumentEndpoint({
+    summary: 'Verify email address',
+    description:
+      'Consumes a single-use email verification token and marks the user email as verified.',
+    successStatus: 200,
+    errors: [400, 429, 500],
+    successExample: {
+      verified: true,
+      emailVerifiedAt: '2026-11-19T10:00:00.000Z',
+    },
+  })
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto.token);
+  }
+
+  @Post('resend-verification')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_EMAIL_ACTION)
+  @HttpCode(HttpStatus.OK)
+  @ApiDocumentEndpoint({
+    summary: 'Resend verification email',
+    description:
+      'Issues a fresh email verification link for unverified active accounts. Always returns a generic response to prevent email enumeration.',
+    successStatus: 200,
+    errors: [400, 429, 500],
+    successExample: {
+      message:
+        'If an eligible account exists for this email, a verification link has been sent.',
+    },
+  })
+  resendVerification(@Body() dto: ResendVerificationDto) {
+    return this.authService.resendVerification(dto.email);
+  }
+
+  @Post('forgot-password')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_EMAIL_ACTION)
+  @HttpCode(HttpStatus.OK)
+  @ApiDocumentEndpoint({
+    summary: 'Request password reset',
+    description:
+      'Generates a single-use password reset token and emails a reset link when an active account matches. Always returns a generic response.',
+    successStatus: 200,
+    errors: [400, 429, 500],
+    successExample: {
+      message:
+        'If an account exists for this email, a password reset link has been sent.',
+    },
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @Throttle(RATE_LIMIT_POLICIES.AUTH_STRICT)
+  @HttpCode(HttpStatus.OK)
+  @ApiDocumentEndpoint({
+    summary: 'Reset password',
+    description:
+      'Validates a single-use reset token, updates the password hash, and revokes all active refresh-token sessions for the user.',
+    successStatus: 200,
+    errors: [400, 429, 500],
+    successExample: {
+      message:
+        'Password has been reset successfully. Please log in with your new password.',
+    },
+  })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @UseGuards(JwtAuthGuard)

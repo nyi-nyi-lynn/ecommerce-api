@@ -68,6 +68,12 @@ export const RATE_LIMIT_POLICIES = {
       ttl: DEFAULT_RATE_LIMIT_TTL_MS,
     },
   },
+  AUTH_EMAIL_ACTION: {
+    [DEFAULT_THROTTLER_NAME]: {
+      limit: 3,
+      ttl: DEFAULT_RATE_LIMIT_TTL_MS,
+    },
+  },
   AUTH_SESSION: {
     [DEFAULT_THROTTLER_NAME]: {
       limit: 10,

@@ -21,6 +21,7 @@ import { GlobalExceptionFilter } from './common/http/global-exception.filter.js'
 import { ResponseInterceptor } from './common/http/response.interceptor.js';
 import { RateLimitModule } from './common/rate-limit/rate-limit.module.js';
 import { RateLimitGuard } from './common/rate-limit/rate-limit.guard.js';
+import { MailingModule } from './modules/mailing/mailing.module.js';
 
 // The interceptor wraps ordinary JSON data; the filter formats thrown errors.
 // Both are registered here once so every HTTP module uses the same contract.
@@ -36,6 +37,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     PrismaModule,
     RedisModule,
     RateLimitModule,
+    MailingModule,
     AuthModule,
     CategoriesModule,
     BrandsModule,
